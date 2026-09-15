@@ -1,0 +1,46 @@
+{
+  "usuarios": [
+    {
+      "nome": "Maria Silva",
+      "email": "maria.silva@example.com",
+      "senha": "senha123",
+      "dataNascimento": "1985-04-12",
+      "isResponsavel": true
+    },
+    {
+      "nome": "Joao Silva",
+      "email": "joao.silva@example.com",
+      "senha": "senha123",
+      "dataNascimento": "2015-09-01",
+      "isResponsavel": false
+    }
+  ],
+  "categorias": [
+    { "nome": "Alimentos", "isControleParental": false },
+    { "nome": "Emocoes", "isControleParental": false },
+    { "nome": "Conteudo Restrito", "isControleParental": true }
+  ],
+  "pranchas": [
+    { "nome": "Prancha do Joao", "usuarioEmail": "joao.silva@example.com" }
+  ],
+  "cartoes": [
+    {
+      "texto": "Quero comer",
+      "caminhoImagem": "/imagens/comer.png",
+      "caminhoAudio": "/audios/comer.mp3",
+      "isFavorito": true,
+      "frequenciaUso": 12,
+      "categoriaNome": "Alimentos",
+      "pranchaNome": "Prancha do Joao"
+    },
+    {
+      "texto": "Estou feliz",
+      "caminhoImagem": "/imagens/feliz.png",
+      "caminhoAudio": "/audios/feliz.mp3",
+      "isFavorito": false,
+      "frequenciaUso": 3,
+      "categoriaNome": "Emocoes",
+      "pranchaNome": "Prancha do Joao"
+    }
+  ]
+}
