@@ -1,0 +1,1 @@
+//Armazena os botões de login para rede social padronizados para os serviços de autenticação
