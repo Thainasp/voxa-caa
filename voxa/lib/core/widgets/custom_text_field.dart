@@ -1,0 +1,1 @@
+// Armazena os campos de texto padronizados para todo o aplicativo
