@@ -1,1 +1,0 @@
-// Armazena código de edição e criação de pranchas e cartões

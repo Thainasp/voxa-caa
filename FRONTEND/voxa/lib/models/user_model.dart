@@ -25,7 +25,9 @@ class UserRepository {
   static UserModel? findUser(String email, String password) {
     try {
       return _users.firstWhere(
-        (u) => u.email.trim().toLowerCase() == email.trim().toLowerCase() && u.password == password,
+        (u) =>
+            u.email.trim().toLowerCase() == email.trim().toLowerCase() &&
+            u.password == password,
       );
     } catch (_) {
       return null;

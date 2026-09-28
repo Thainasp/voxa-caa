@@ -1,1 +1,0 @@
-// Armazena código para exclusão de pranchas e cartões

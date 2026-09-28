@@ -13,7 +13,10 @@ class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.fieldFillColor,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 16,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(25.0),
           borderSide: BorderSide.none,
@@ -24,7 +27,10 @@ class AppTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(25.0),
-          borderSide: const BorderSide(color: AppColors.headerGreen, width: 1.5),
+          borderSide: const BorderSide(
+            color: AppColors.headerGreen,
+            width: 1.5,
+          ),
         ),
         hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
       ),

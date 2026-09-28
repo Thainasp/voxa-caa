@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:voxa/models/user_model.dart';
 
+import '../../../../core/theme/app_colors.dart';
 import '../../../../core/widgets/base_screen_layout.dart';
 import '../../../../core/widgets/cartao_padrao.dart';
+import '../../../profile/presentation/profile.dart';
 import '../widgets/category_navigation.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({Key? key}) : super(key: key);
+  final UserModel? user;
+
+  const HomePage({Key? key, this.user}) : super(key: key);
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -124,12 +129,20 @@ class _HomePageState extends State<HomePage> {
       {'label': 'Sim', 'color': Colors.green, 'icon': Icons.check_circle},
       {'label': 'Não', 'color': Colors.red, 'icon': Icons.cancel},
       {'label': 'Mais', 'color': Colors.orange, 'icon': Icons.add_circle},
-      {'label': 'Acabou', 'color': Colors.blueGrey, 'icon': Icons.remove_circle},
+      {
+        'label': 'Acabou',
+        'color': Colors.blueGrey,
+        'icon': Icons.remove_circle,
+      },
       {'label': 'Espera', 'color': Colors.amber, 'icon': Icons.hourglass_top},
       {'label': 'Socorro', 'color': Colors.redAccent, 'icon': Icons.warning},
     ],
     'Objetos': [
-      {'label': 'Celular', 'color': Colors.blueGrey, 'icon': Icons.phone_android},
+      {
+        'label': 'Celular',
+        'color': Colors.blueGrey,
+        'icon': Icons.phone_android,
+      },
       {'label': 'Livro', 'color': Colors.indigo, 'icon': Icons.book},
       {'label': 'Brinquedo', 'color': Colors.pink, 'icon': Icons.toys},
       {'label': 'Bola', 'color': Colors.green, 'icon': Icons.sports_soccer},
@@ -192,159 +205,150 @@ class _HomePageState extends State<HomePage> {
         _tabelasSimbolos[_categoriaAtual] ?? _tabelasSimbolos['Principal']!;
 
     return BaseScreenLayout(
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.person_outline,
-                        color: Colors.white,
-                        size: 26,
+      appBar: AppBar(
+        backgroundColor: AppColors.headerGreen,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        toolbarHeight: 64,
+        automaticallyImplyLeading: false,
+        titleSpacing: 0,
+        leadingWidth: 104,
+        leading: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.person_outline, size: 26),
+              tooltip: 'Perfil',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ProfilePage(user: widget.user),
+                  ),
+                );
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.home_outlined, size: 28),
+              tooltip: 'Início',
+              onPressed: _voltarInicio,
+            ),
+          ],
+        ),
+        title: Container(
+          height: 42,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Colors.white, width: 1)),
+          ),
+          child: _fraseSelecionada.isEmpty
+              ? const Center(
+                  child: Text(
+                    'Toque nos cartões para formar a frase...',
+                    style: TextStyle(color: Colors.white70, fontSize: 12),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                )
+              : ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _fraseSelecionada.length,
+                  itemBuilder: (context, index) {
+                    final item = _fraseSelecionada[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
                       ),
-                      tooltip: 'Perfil',
-                      onPressed: () {},
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.home_outlined,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                      tooltip: 'Início',
-                      onPressed: _voltarInicio,
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Container(
-                    height: 42,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    decoration: const BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(
-                          color: Colors.white,
-                          width: 1,
+                      child: Center(
+                        child: Text(
+                          item['label'],
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
-                    ),
-                    child: _fraseSelecionada.isEmpty
-                        ? const Center(
-                            child: Text(
-                              'Toque nos cartões para formar a frase...',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 12,
-                              ),
-                            ),
-                          )
-                        : ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: _fraseSelecionada.length,
-                            itemBuilder: (context, index) {
-                              final item = _fraseSelecionada[index];
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    item['label'],
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
+                    );
+                  },
                 ),
-                const SizedBox(width: 8),
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.play_circle_outline,
-                        color: Colors.white,
-                        size: 26,
-                      ),
-                      tooltip: 'Falar frase',
-                      onPressed: _falarFrase,
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.backspace_outlined,
-                        color: Colors.white,
-                        size: 24,
-                      ),
-                      tooltip: 'Apagar',
-                      onPressed: _apagarUltimaPalavra,
-                    ),
-                  ],
-                ),
-              ],
-            ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.play_circle_outline, size: 26),
+            tooltip: 'Falar frase',
+            onPressed: _falarFrase,
           ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Color(0xFFF4F9F5),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-              ),
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Column(
-                children: [
-                  Expanded(
-                    child: GridView.builder(
-                      padding: const EdgeInsets.all(4.0),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 6,
-                            crossAxisSpacing: 10,
-                            mainAxisSpacing: 10,
-                            childAspectRatio: 1.0,
-                          ),
-                      itemCount: simbolosAtuais.length,
-                      itemBuilder: (context, index) {
-                        final symbol = simbolosAtuais[index];
-                        return Cartao_Padrao(
-                          backgroundColor: symbol['color'],
-                          label: symbol['label'],
-                          iconData: symbol['icon'],
-                          onTap: () {
-                            setState(() {
-                              _fraseSelecionada.add(symbol);
-                            });
-                          },
-                        );
-                      },
-                      ),
-                    ),
-                  const SizedBox(height: 8),
-                  CategoryNavigation(
-                    categories: _bottomCategories,
-                    selectedKey: _categoriaAtual,
-                    onCategorySelected: (category) {
-                      setState(() => _categoriaAtual = category);
-                    },
-                  ),
-                ],
-              ),
-            ),
+          IconButton(
+            icon: const Icon(Icons.backspace_outlined, size: 24),
+            tooltip: 'Apagar',
+            onPressed: _apagarUltimaPalavra,
           ),
         ],
+      ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isLandscape = constraints.maxWidth > constraints.maxHeight;
+          final crossAxisCount = constraints.maxWidth < 480
+              ? 4
+              : isLandscape && constraints.maxWidth >= 700
+              ? 8
+              : 6;
+
+          return Column(
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: AppColors.contentBackground,
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(30),
+                    ),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: GridView.builder(
+                          padding: const EdgeInsets.all(4.0),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossAxisCount,
+                                crossAxisSpacing: 10,
+                                mainAxisSpacing: 10,
+                                childAspectRatio: 1.0,
+                              ),
+                          itemCount: simbolosAtuais.length,
+                          itemBuilder: (context, index) {
+                            final symbol = simbolosAtuais[index];
+                            return Cartao_Padrao(
+                              backgroundColor: symbol['color'],
+                              label: symbol['label'],
+                              iconData: symbol['icon'],
+                              onTap: () {
+                                setState(() {
+                                  _fraseSelecionada.add(symbol);
+                                });
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      CategoryNavigation(
+                        categories: _bottomCategories,
+                        selectedKey: _categoriaAtual,
+                        height: isLandscape ? 64 : 96,
+                        iconSize: isLandscape ? 36 : 52,
+                        onCategorySelected: (category) {
+                          setState(() => _categoriaAtual = category);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

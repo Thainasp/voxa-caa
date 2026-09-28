@@ -1,1 +1,0 @@
-// Construção do bloco de cartão reutilizável, contendo imagem, texto, bordas e opção de uso para ser utilizado em diferentes partes do aplicativo, como pranchas.

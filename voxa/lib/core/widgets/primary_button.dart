@@ -1,1 +1,0 @@
-// Armazena os botões primários padronizados para todo o aplicativo
