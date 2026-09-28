@@ -1,0 +1,1 @@
+// Organiza e gerencia a exibição de uma lista de cartões, permitindo a apresentação do conteúdo em um formato de grid, com suporte para rolagem e interação do usuário.
