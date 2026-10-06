@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voxa/features/auth/presentation/widgets/custom_text_field.dart';
 import 'package:voxa/models/user_model.dart';
 import 'package:voxa/core/theme/app_colors.dart';
@@ -22,6 +23,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _confirmPasswordController = TextEditingController();
 
   bool _termsAccepted = false;
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -34,10 +36,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  void _handleRegister() {
-    if (!_formKey.currentState!.validate()) {
-      return;
+  String _formatDateToIso(String dateStr) {
+    final parts = dateStr.trim().split('/');
+    if (parts.length == 3) {
+      final day = parts[0].padLeft(2, '0');
+      final month = parts[1].padLeft(2, '0');
+      final year = parts[2];
+      return '$year-$month-$day';
     }
+    return dateStr;
+  }
+
+  Future<void> _handleRegister() async {
+    if (!_formKey.currentState!.validate()) return;
 
     if (!_termsAccepted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -49,20 +60,71 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    final newUser = UserModel(
-      name: _nameController.text.trim(),
-      email: _emailController.text.trim(),
-      phone: _phoneController.text.trim(),
-      birthDate: _birthController.text.trim(),
-      password: _passwordController.text,
-    );
+    setState(() => _isLoading = true);
 
-    UserRepository.addUser(newUser);
+    try {
+      final email = _emailController.text.trim();
+      final password = _passwordController.text;
 
-    if (Navigator.canPop(context)) {
-      Navigator.pop(context, newUser);
-    } else {
-      Navigator.pushReplacementNamed(context, '/login');
+      final response = await Supabase.instance.client.auth.signUp(
+        email: email,
+        password: password,
+      );
+
+      final authUser = response.user;
+      if (authUser == null) {
+        throw const AuthException('Não foi possível registrar o usuário.');
+      }
+
+      await Supabase.instance.client.from('usuario').insert({
+        'id': authUser.id,
+        'nome': _nameController.text.trim(),
+        'email': email,
+        'data_nascimento': _formatDateToIso(_birthController.text),
+        'is_responsavel': true,
+      });
+
+      final createdProfile = UserModel(
+        id: authUser.id,
+        name: _nameController.text.trim(),
+        email: email,
+        phone: _phoneController.text.trim(),
+        birthDate: _birthController.text.trim(),
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cadastro realizado com sucesso!'),
+          backgroundColor: AppColors.headerGreen,
+        ),
+      );
+
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context, createdProfile);
+      } else {
+        Navigator.pushReplacementNamed(
+          context,
+          '/login',
+          arguments: createdProfile,
+        );
+      }
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), backgroundColor: Colors.redAccent),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Erro ao concluir cadastro. Verifique os dados.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -79,12 +141,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
 
     return Scaffold(
-      // Fundo claro no Scaffold: elimina o retângulo verde que vazava na parte inferior
       backgroundColor: AppColors.contentBackground,
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Topo Verde com Título
             Container(
               width: double.infinity,
               color: AppColors.headerGreen,
@@ -95,13 +155,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   style: GoogleFonts.poppins(
                     fontSize: 30,
                     fontWeight: FontWeight.w600,
-                    color: Colors.black87,
+                    color: AppColors.titleColor,
                   ),
                 ),
               ),
             ),
-
-            // Card Principal Arredondado
             Container(
               width: double.infinity,
               transform: Matrix4.translationValues(0.0, -20.0, 0.0),
@@ -204,8 +262,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       },
                     ),
                     const SizedBox(height: 8),
-
-                    // Aceite dos Termos
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
@@ -219,22 +275,47 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           },
                         ),
                         Expanded(
-                          child: Text(
-                            'Ao se cadastrar você aceita os termos de uso e privacidade.',
-                            style: GoogleFonts.leagueSpartan(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w400,
-                              color: Colors.black87,
+                          child: GestureDetector(
+                            onTap: () async {
+                              final accepted = await Navigator.pushNamed(
+                                context,
+                                '/terms',
+                              );
+                              if (accepted == true) {
+                                setState(() => _termsAccepted = true);
+                              }
+                            },
+                            child: Text(
+                              'Ao se cadastrar voce aceita os termos de uso e privacidade.',
+                              style: GoogleFonts.leagueSpartan(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.black87,
+                              ),
                             ),
                           ),
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 15),
                     ElevatedButton(
-                      onPressed: _handleRegister,
-                      child: const Text('Cadastrar'),
+                      onPressed: _isLoading ? null : _handleRegister,
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text(
+                              'Cadastrar',
+                              style: GoogleFonts.poppins(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                     ),
                     const SizedBox(height: 12),
                     Row(
@@ -254,7 +335,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             'Acesse',
                             style: GoogleFonts.leagueSpartan(
                               fontSize: 13,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w300,
                               color: Colors.blue,
                             ),
                           ),

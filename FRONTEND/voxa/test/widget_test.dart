@@ -1,12 +1,6 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:voxa/features/auth/presentation/login.dart';
 import 'package:voxa/features/home/presentation/pages/home.dart';
@@ -15,6 +9,21 @@ import 'package:voxa/main.dart';
 import 'package:voxa/models/user_model.dart';
 
 void main() {
+  setUpAll(() async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+
+    // Inicialização segura para o ambiente de testes (não realiza requisições reais)
+    // Permite que widgets que escutam o Supabase (como o initState do login) não deem erro
+    try {
+      await Supabase.initialize(
+        url: 'https://fake-project.supabase.co',
+        publishableKey: 'fake-anon-key',
+      );
+    } catch (_) {
+      // Evita erro caso já tenha sido inicializado durante a execução da suíte
+    }
+  });
+
   testWidgets('abre o login e permite acessar o cadastro', (
     WidgetTester tester,
   ) async {
@@ -23,7 +32,7 @@ void main() {
     expect(find.text('Bem Vindo'), findsOneWidget);
     expect(find.text('Criar Conta'), findsNothing);
 
-    final registerButton = find.text('Cadastre - Se').first;
+    final registerButton = find.text('Cadastre-se').first;
     await tester.ensureVisible(registerButton);
     await tester.tap(registerButton);
     await tester.pumpAndSettle();
@@ -52,12 +61,14 @@ void main() {
   testWidgets('perfil mostra o nome do UserModel recebido pela Home', (
     WidgetTester tester,
   ) async {
+    // Instância fictícia representando o usuário que viria do Supabase
     final user = UserModel(
+      id: 'a1b2c3d4-e5f6-7890-1234-56789abcdef0',
       name: 'Maria da Silva',
       email: 'maria@voxa.com',
       phone: '11999999999',
       birthDate: '01/01/2000',
-      password: 'senha123',
+      isResponsavel: true,
     );
 
     await tester.pumpWidget(MaterialApp(home: HomePage(user: user)));
