@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:voxa/core/theme/app_colors.dart';
 
 class CustomTextField extends StatefulWidget {
   final String label;
@@ -47,7 +48,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
             style: GoogleFonts.poppins(
               fontWeight: FontWeight.w500,
               fontSize: 15,
-              color: Colors.black87,
+              color: AppColors.titleColor,
             ),
           ),
         ),
@@ -60,10 +61,15 @@ class _CustomTextFieldState extends State<CustomTextField> {
           style: GoogleFonts.poppins(
             fontSize: 16,
             fontWeight: FontWeight.w400,
-            color: Colors.black87,
+            color: AppColors.textColor,
           ),
           decoration: InputDecoration(
             hintText: widget.hintText,
+            hintStyle: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.w400,
+              color: AppColors.textColor.withOpacity(0.5),
+            ),
             errorMaxLines: 2,
             suffixIcon: widget.isPassword
                 ? IconButton(
@@ -71,7 +77,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
                       _obscureText
                           ? Icons.visibility_off_outlined
                           : Icons.visibility_outlined,
-                      color: Colors.grey.shade600,
+                      color: AppColors.textColor.withOpacity(0.6),
                       size: 22,
                     ),
                     onPressed: () {
@@ -89,7 +95,6 @@ class _CustomTextFieldState extends State<CustomTextField> {
   }
 }
 
-// Formatador para a Data de Nascimento (DD/MM/YYYY)
 class DateInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(

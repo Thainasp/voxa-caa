@@ -6,4 +6,6 @@ abstract final class AppColors {
   static const Color categoryBlue = Color(0xFF6DB6FE);
   static const Color selectedCategoryGreen = Color(0xFF00896B);
   static const Color fieldFillColor = Color(0xFFE8F8F2);
+  static const Color titleColor = Color(0xFF093030);
+  static const Color textColor = Color(0xFF4B4544);
 }

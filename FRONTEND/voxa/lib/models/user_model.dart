@@ -1,36 +1,28 @@
 class UserModel {
+  final String id;
   final String name;
   final String email;
-  final String phone;
-  final String birthDate;
-  final String password;
+  final String? phone;
+  final String? birthDate;
+  final bool isResponsavel;
 
   UserModel({
+    required this.id,
     required this.name,
     required this.email,
-    required this.phone,
-    required this.birthDate,
-    required this.password,
+    this.phone,
+    this.birthDate,
+    this.isResponsavel = false,
   });
-}
 
-// Repositório que mantém os usuários em memória durante a sessão do aplicativo
-class UserRepository {
-  static final List<UserModel> _users = [];
-
-  static void addUser(UserModel user) {
-    _users.add(user);
-  }
-
-  static UserModel? findUser(String email, String password) {
-    try {
-      return _users.firstWhere(
-        (u) =>
-            u.email.trim().toLowerCase() == email.trim().toLowerCase() &&
-            u.password == password,
-      );
-    } catch (_) {
-      return null;
-    }
+  factory UserModel.fromMap(Map<String, dynamic> map) {
+    return UserModel(
+      id: map['id'] as String,
+      name: map['nome'] ?? '',
+      email: map['email'] ?? '',
+      phone: map['telefone'] as String?,
+      birthDate: map['data_nascimento'] as String?,
+      isResponsavel: map['is_responsavel'] ?? false,
+    );
   }
 }
