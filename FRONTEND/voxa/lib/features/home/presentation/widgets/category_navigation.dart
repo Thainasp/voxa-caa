@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/theme/app_colors.dart';
+import '../../../../theme/app_colors.dart';
 
 class CategoryNavigation extends StatelessWidget {
   final List<Map<String, dynamic>> categories;

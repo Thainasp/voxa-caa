@@ -11,10 +11,31 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:voxa/features/auth/presentation/login.dart';
 import 'package:voxa/features/home/presentation/pages/home.dart';
 import 'package:voxa/features/profile/presentation/profile.dart';
+import 'package:voxa/core/widgets/home_navigation_bar.dart';
 import 'package:voxa/main.dart';
 import 'package:voxa/models/user_model.dart';
 
 void main() {
+  testWidgets('barra de início executa o callback configurado', (
+    WidgetTester tester,
+  ) async {
+    var wasPressed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          bottomNavigationBar: HomeNavigationBar(
+            onHomePressed: () => wasPressed = true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Início'));
+
+    expect(wasPressed, isTrue);
+  });
+
   testWidgets('abre o login e permite acessar o cadastro', (
     WidgetTester tester,
   ) async {

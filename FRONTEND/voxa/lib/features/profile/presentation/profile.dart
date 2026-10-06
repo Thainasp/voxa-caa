@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/theme/app_colors.dart';
+import '../../../theme/app_colors.dart';
 import '../../../core/widgets/base_screen_layout.dart';
+import '../../../core/widgets/home_navigation_bar.dart';
 import '../../../models/user_model.dart';
 
 class ProfilePage extends StatelessWidget {
@@ -156,7 +157,7 @@ class ProfilePage extends StatelessWidget {
                         Icons.person,
                         color: Colors.white,
                         size: 52,
-                        semanticLabel: 'Foto de perfil genérica',
+                        semanticLabel: 'Foto de perfil',
                       ),
                     ),
                   ),
@@ -166,55 +167,7 @@ class ProfilePage extends StatelessWidget {
           );
         },
       ),
-      bottomNavigationBar: Builder(
-        builder: (context) {
-          final bottomInset = MediaQuery.paddingOf(context).bottom;
-
-          return ColoredBox(
-            color: AppColors.contentBackground,
-            child: SizedBox(
-              height: 64 + bottomInset,
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: Material(
-                  color: const Color(0xFFDFF7E2),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(32),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: SizedBox(
-                    width: 64,
-                    height: 64 + bottomInset,
-                    child: Padding(
-                      padding: EdgeInsets.only(bottom: bottomInset),
-                      child: Center(
-                        child: IconButton(
-                          style: const ButtonStyle(
-                            overlayColor: WidgetStatePropertyAll(
-                              Colors.transparent,
-                            ),
-                            backgroundColor: WidgetStatePropertyAll(
-                              Colors.transparent,
-                            ),
-                          ),
-                          icon: const Icon(Icons.home, size: 26),
-                          color: AppColors.selectedCategoryGreen,
-                          tooltip: 'Início',
-                          onPressed: () {
-                            if (Navigator.of(context).canPop()) {
-                              Navigator.of(context).pop();
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      ),
+      bottomNavigationBar: const HomeNavigationBar(),
     );
   }
 }

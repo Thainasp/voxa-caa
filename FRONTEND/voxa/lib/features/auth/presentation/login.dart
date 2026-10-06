@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:voxa/features/auth/presentation/widgets/custom_text_field.dart';
 import 'package:voxa/features/auth/presentation/widgets/social_login_buttons.dart';
 import 'package:voxa/models/user_model.dart';
-import 'package:voxa/core/theme/app_colors.dart';
+import 'package:voxa/theme/app_colors.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter/services.dart';
 
