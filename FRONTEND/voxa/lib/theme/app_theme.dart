@@ -1,23 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:voxa/core/theme/app_colors.dart';
+import 'package:voxa/theme/app_colors.dart';
 
 class AppTheme {
   static ThemeData get theme {
     return ThemeData(
-      scaffoldBackgroundColor: AppColors.headerGreen,
+      scaffoldBackgroundColor: AppColors.headerGreen, //cor de fundo padrão dos Scaffold do aplicativo.
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.headerGreen,
         primary: AppColors.headerGreen,
         surface: AppColors.contentBackground,
       ),
-      inputDecorationTheme: InputDecorationTheme(
+      inputDecorationTheme: InputDecorationTheme(// campos de entrada.
         filled: true,
         fillColor: AppColors.fieldFillColor,
-        contentPadding: const EdgeInsets.symmetric(
+        contentPadding: const EdgeInsets.symmetric(//espaçamento
           horizontal: 20,
           vertical: 16,
         ),
-        border: OutlineInputBorder(
+        border: OutlineInputBorder(//bordas
           borderRadius: BorderRadius.circular(25.0),
           borderSide: BorderSide.none,
         ),

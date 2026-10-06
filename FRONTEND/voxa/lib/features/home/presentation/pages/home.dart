@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voxa/models/user_model.dart';
 
-import '../../../../core/theme/app_colors.dart';
+import '../../../../theme/app_colors.dart';
 import '../../../../core/widgets/base_screen_layout.dart';
 import '../../../../core/widgets/cartao_padrao.dart';
 import '../../../profile/presentation/profile.dart';
@@ -205,7 +205,7 @@ class _HomePageState extends State<HomePage> {
         _tabelasSimbolos[_categoriaAtual] ?? _tabelasSimbolos['Principal']!;
 
     return BaseScreenLayout(
-      appBar: AppBar(
+      appBar: AppBar(//cabecalho
         backgroundColor: AppColors.headerGreen,
         foregroundColor: Colors.white,
         elevation: 0,
@@ -221,7 +221,7 @@ class _HomePageState extends State<HomePage> {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => ProfilePage(user: widget.user),
+                    builder: (_) => ProfilePage(user: widget.user),//usando o Navigator.push para sair da Home e abrir a ProfilePage.
                   ),
                 );
               },
@@ -284,14 +284,14 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: LayoutBuilder(
+      body: LayoutBuilder(// responsividade
         builder: (context, constraints) {
-          final isLandscape = constraints.maxWidth > constraints.maxHeight;
+          final isLandscape = constraints.maxWidth > constraints.maxHeight;// verifica se esta em paisagem
           final crossAxisCount = constraints.maxWidth < 480
               ? 4
               : isLandscape && constraints.maxWidth >= 700
               ? 8
-              : 6;
+              : 6;// define a quantidade de colunas com base no tamanho da tela
 
           return Column(
             children: [
@@ -319,7 +319,7 @@ class _HomePageState extends State<HomePage> {
                           itemCount: simbolosAtuais.length,
                           itemBuilder: (context, index) {
                             final symbol = simbolosAtuais[index];
-                            return Cartao_Padrao(
+                            return Cartao_Padrao(// pega o padrao do core
                               backgroundColor: symbol['color'],
                               label: symbol['label'],
                               iconData: symbol['icon'],
@@ -333,7 +333,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      CategoryNavigation(
+                      CategoryNavigation(// nagevacao inferior
                         categories: _bottomCategories,
                         selectedKey: _categoriaAtual,
                         height: isLandscape ? 64 : 96,

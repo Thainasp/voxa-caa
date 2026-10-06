@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
+import '../../theme/app_colors.dart';
 
 class BaseScreenLayout extends StatelessWidget {
   final Widget body;
-  final PreferredSizeWidget? appBar;
+  final PreferredSizeWidget? appBar;// uso do appBar para 
   final Widget? bottomNavigationBar;
 
   const BaseScreenLayout({
