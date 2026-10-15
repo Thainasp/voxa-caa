@@ -5,7 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voxa/features/auth/presentation/widgets/custom_text_field.dart';
 import 'package:voxa/features/auth/presentation/widgets/social_login_buttons.dart';
 import 'package:voxa/models/user_model.dart';
-import 'package:voxa/core/theme/app_colors.dart';
+import 'package:voxa/theme/app_colors.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
