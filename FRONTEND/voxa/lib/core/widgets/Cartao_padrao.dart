@@ -44,19 +44,31 @@ class Cartao_Padrao extends StatelessWidget {
             // --- ÁREA DA IMAGEM OU ÍCONE ---
             Expanded(
               child: Center(
-                child: imagePath != null
-                    ? Image.asset(
-                        imagePath!,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          // Fallback se a imagem não carregar
-                          return const Icon(
-                            Icons.broken_image,
-                            color: Colors.white,
-                            size: 30,
-                          );
-                        },
-                      )
+                child: imagePath != null && imagePath!.isNotEmpty
+                    ? (imagePath!.startsWith('http://') ||
+                              imagePath!.startsWith('https://')
+                          ? Image.network(
+                              imagePath!,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Icon(
+                                  Icons.broken_image,
+                                  color: Colors.white,
+                                  size: 30,
+                                );
+                              },
+                            )
+                          : Image.asset(
+                              imagePath!,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Icon(
+                                  Icons.broken_image,
+                                  color: Colors.white,
+                                  size: 30,
+                                );
+                              },
+                            ))
                     : Icon(
                         iconData ?? Icons.help_outline,
                         color: Colors.white,

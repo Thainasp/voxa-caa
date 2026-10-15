@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:voxa/core/theme/app_colors.dart';
+import 'package:voxa/theme/app_colors.dart';
 import 'package:voxa/features/auth/presentation/welcome_screen.dart';
 
 class SplashScreen extends StatefulWidget {
