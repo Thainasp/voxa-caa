@@ -8,6 +8,9 @@ import 'package:voxa/features/auth/presentation/login.dart';
 import 'package:voxa/features/auth/presentation/register.dart';
 import 'package:voxa/features/auth/presentation/forgot_password.dart';
 import 'package:voxa/features/auth/presentation/new_password.dart';
+import 'package:voxa/features/profile/presentation/profile.dart';
+import 'package:voxa/features/profile/presentation/profile_access.dart';
+import 'package:voxa/features/profile/presentation/settings.dart';
 
 import 'package:voxa/core/presentation/terms_and_conditions.dart';
 import 'package:voxa/models/user_model.dart';
@@ -59,6 +62,11 @@ class VoxaApp extends StatelessWidget {
         '/home': (context) => HomePage(
           user: ModalRoute.of(context)?.settings.arguments as UserModel?,
         ),
+        '/profile-access': (context) => const ProfileAccessScreen(),
+        '/profile': (context) => ProfilePage(
+          user: ModalRoute.of(context)?.settings.arguments as UserModel?,
+        ),
+        '/settings': (context) => const SettingsPage(),
       },
     );
   }

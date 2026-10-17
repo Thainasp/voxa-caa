@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:voxa/core/widgets/app_colors.dart';
+
 import '../../../core/widgets/base_screen_layout.dart';
 import '../../../core/widgets/curved_content_panel.dart';
 import '../../../core/widgets/home_navigation_bar.dart';
 import '../../../models/user_model.dart';
 import '../../edit/presentation/pages/edit_principal.dart';
+import '../../profile/presentation/settings.dart';
+//import 'package:voxa/features/profile/presentation/edit_profile.dart';
 
 class ProfilePage extends StatelessWidget {
   final UserModel? user;
@@ -23,6 +28,139 @@ class ProfilePage extends StatelessWidget {
     _ProfileOptionData(icon: Icons.settings_outlined, label: 'Configuração'),
     _ProfileOptionData(icon: Icons.logout, label: 'Sair', isDestructive: true),
   ];
+
+  Future<void> _showLogoutDialog(BuildContext context) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext dialogContext) {
+        return Dialog(
+          backgroundColor: AppColors.contentBackground,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24.0),
+          ),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 36.0),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24.0,
+              vertical: 28.0,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Finalizar Sessão',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.titleColor,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Tem certeza que deseja sair?',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.leagueSpartan(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w400,
+                    color: AppColors.titleColor,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      Navigator.of(dialogContext).pop();
+                      await Supabase.instance.client.auth.signOut();
+                      if (context.mounted) {
+                        Navigator.of(
+                          context,
+                        ).pushNamedAndRemoveUntil('/welcome', (route) => false);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.headerGreen,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                    ),
+                    child: Text(
+                      'Sim, sair',
+                      style: GoogleFonts.poppins(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.contentBackground,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Botão "Cancelar"
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.fieldFillColor,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                    ),
+                    child: Text(
+                      'Cancelar',
+                      style: GoogleFonts.poppins(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.titleColor,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _handleOptionTap(BuildContext context, _ProfileOptionData option) {
+    if (option.isDestructive) {
+      _showLogoutDialog(context);
+      return;
+    }
+
+    switch (option.label) {
+      case 'Editar Cartões/Tabelas':
+        Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => const Edit_principal()));
+        break;
+      case 'Editar perfil':
+        // Conectar tela de edição de perfil quando estiver pronta
+        // Navigator.of(context).pushNamed('/edit_profile');
+        break;
+      case 'Trocar de Perfil':
+        // Conectar tela trocar de perfil quando estiver pronta
+        break;
+      case 'Editar Favoritos':
+        // Conectar tela de favoritos quando estiver pronta
+        break;
+      case 'Configuração':
+        Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => const SettingsPage()));
+        break;
+      default:
+        break;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,7 +181,7 @@ class ProfilePage extends StatelessWidget {
               color: AppColors.categoryBlue,
               child: const Icon(
                 Icons.person,
-                color: Colors.white,
+                color: AppColors.contentBackground,
                 size: 52,
                 semanticLabel: 'Foto de perfil',
               ),
@@ -56,9 +194,9 @@ class ProfilePage extends StatelessWidget {
             Text(
               user?.name ?? 'Usuário',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF24332E),
-                fontSize: 22,
+              style: GoogleFonts.poppins(
+                color: AppColors.titleColor,
+                fontSize: 20,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -69,18 +207,7 @@ class ProfilePage extends StatelessWidget {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(16),
                   hoverColor: Colors.transparent,
-                  onTap: () {
-                    if (option.label == 'Editar Cartões/Tabelas') {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const Edit_principal(),
-                        ),
-                      );
-                    } else if (option.isDestructive) {
-                      Navigator.of(context)
-                          .pushNamedAndRemoveUntil('/login', (route) => false);
-                    }
-                  },
+                  onTap: () => _handleOptionTap(context, option),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -97,7 +224,7 @@ class ProfilePage extends StatelessWidget {
                           ),
                           child: Icon(
                             option.icon,
-                            color: Colors.white,
+                            color: AppColors.contentBackground,
                             size: 28,
                           ),
                         ),
@@ -106,12 +233,12 @@ class ProfilePage extends StatelessWidget {
                           child: Text(
                             option.label,
                             softWrap: true,
-                            style: TextStyle(
+                            style: GoogleFonts.poppins(
                               color: option.isDestructive
                                   ? Colors.red.shade700
-                                  : const Color(0xFF24332E),
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
+                                  : AppColors.titleColor,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ),

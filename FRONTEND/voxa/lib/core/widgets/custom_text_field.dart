@@ -36,6 +36,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
     _obscureText = widget.isPassword;
   }
 
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -46,7 +47,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
             child: Text(
               widget.label!,
               style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
                 fontSize: 15,
                 color: AppColors.titleColor,
               ),
@@ -64,12 +65,116 @@ class _CustomTextFieldState extends State<CustomTextField> {
             fontWeight: FontWeight.w400,
             color: AppColors.textColor,
           ),
-          decoration: InputDecoration(),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: AppColors.fieldFillColor,
+            hintText: widget.hintText,
+            hintStyle: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.w400,
+              color: AppColors.textColor.withOpacity(0.5),
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 20,
+              vertical: 16,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(28),
+              borderSide: BorderSide.none,
+            ),
+            errorMaxLines: 2,
+            suffixIcon: widget.isPassword
+                ? Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: IconButton(
+                      splashRadius: 20,
+                      onPressed: () {
+                        setState(() {
+                          _obscureText = !_obscureText;
+                        });
+                      },
+                      icon: _obscureText
+                          ? SleepingEyeIcon(
+                              color: AppColors.textColor.withOpacity(0.5),
+                            )
+                          : Icon(
+                              Icons.visibility_outlined,
+                              color: AppColors.textColor.withOpacity(0.5),
+                              size: 24,
+                            ),
+                    ),
+                  )
+                : null,
+          ),
         ),
-        const SizedBox(height: 12),
       ],
     );
   }
+}
+
+class SleepingEyeIcon extends StatelessWidget {
+  final Color color;
+  final double size;
+
+  const SleepingEyeIcon({super.key, required this.color, this.size = 24.0});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Center(
+        child: CustomPaint(
+          size: Size(size * 0.9, size * 0.5),
+          painter: _SleepingEyePainter(color: color),
+        ),
+      ),
+    );
+  }
+}
+
+class _SleepingEyePainter extends CustomPainter {
+  final Color color;
+
+  _SleepingEyePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    final path = Path();
+    path.moveTo(0, size.height * 0.2);
+    path.quadraticBezierTo(
+      size.width / 2,
+      size.height * 0.75,
+      size.width,
+      size.height * 0.2,
+    );
+    canvas.drawPath(path, paint);
+
+    canvas.drawLine(
+      Offset(size.width * 0.5, size.height * 0.55),
+      Offset(size.width * 0.5, size.height),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(size.width * 0.3, size.height * 0.45),
+      Offset(size.width * 0.23, size.height * 0.9),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(size.width * 0.7, size.height * 0.45),
+      Offset(size.width * 0.77, size.height * 0.9),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class DateInputFormatter extends TextInputFormatter {

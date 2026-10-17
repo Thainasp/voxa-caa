@@ -43,8 +43,9 @@ class CurvedContentPanel extends StatelessWidget {
       children: [
         Positioned.fill(
           top: panelTop,
-          child: DecoratedBox(
-            decoration: const BoxDecoration(
+          bottom: 0,
+          child: const DecoratedBox(
+            decoration: BoxDecoration(
               color: AppColors.contentBackground,
               borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
             ),
@@ -52,6 +53,7 @@ class CurvedContentPanel extends StatelessWidget {
         ),
         Positioned.fill(
           top: scrollTopInset,
+          bottom: 0,
           child: SingleChildScrollView(
             padding: EdgeInsets.fromLTRB(
               horizontalPadding,
