@@ -63,12 +63,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final name = _nameController.text.trim();
       final email = _emailController.text.trim();
       final password = _passwordController.text;
 
+      // 1. Cria a conta no Auth já enviando o display_name e metadados
       final response = await Supabase.instance.client.auth.signUp(
         email: email,
         password: password,
+        data: {'display_name': name, 'nome': name, 'name': name},
       );
 
       final authUser = response.user;
@@ -76,9 +79,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         throw const AuthException('Não foi possível registrar o usuário.');
       }
 
-      await Supabase.instance.client.from('usuario').insert({
+      // 2. Atualiza/complementa a linha na tabela usuario criada pela trigger
+      await Supabase.instance.client.from('usuario').upsert({
         'id': authUser.id,
-        'nome': _nameController.text.trim(),
+        'nome': name,
         'email': email,
         'data_nascimento': _formatDateToIso(_birthController.text),
         'is_responsavel': true,
@@ -86,7 +90,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       final createdProfile = UserModel(
         id: authUser.id,
-        name: _nameController.text.trim(),
+        name: name,
         email: email,
         phone: _phoneController.text.trim(),
         birthDate: _birthController.text.trim(),

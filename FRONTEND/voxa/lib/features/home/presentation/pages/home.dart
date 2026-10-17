@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:voxa/models/user_model.dart';
 
 import 'package:voxa/core/widgets/app_colors.dart';
+
 import '../../../../core/widgets/base_screen_layout.dart';
 import '../../../../core/widgets/cartao_padrao.dart';
-import '../../../profile/presentation/profile.dart';
+import '../../../profile/presentation/profile_access.dart';
 import '../controllers/home_content_controller.dart';
 import '../widgets/category_navigation.dart';
 
@@ -74,7 +75,7 @@ class _HomePageState extends State<HomePage> {
               onPressed: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => ProfilePage(user: widget.user), //usando o Navigator.push para sair da Home e abrir a ProfilePage.
+                    builder: (_) => const ProfileAccessScreen(),
                   ),
                 );
               },
