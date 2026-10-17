@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:voxa/models/user_model.dart';
 
-import '../../../../theme/app_colors.dart';
+import 'package:voxa/core/widgets/app_colors.dart';
 import '../../../../core/widgets/base_screen_layout.dart';
 import '../../../../core/widgets/cartao_padrao.dart';
 import '../../../profile/presentation/profile.dart';

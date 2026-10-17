@@ -11,7 +11,7 @@ import 'package:voxa/features/auth/presentation/new_password.dart';
 
 import 'package:voxa/core/presentation/terms_and_conditions.dart';
 import 'package:voxa/models/user_model.dart';
-import 'package:voxa/theme/app_theme.dart';
+import 'package:voxa/core/widgets/app_theme.dart';
 import 'features/home/presentation/pages/home.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();

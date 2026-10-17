@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:voxa/theme/app_colors.dart';
+import 'package:voxa/core/widgets/app_colors.dart';
+import 'package:voxa/core/widgets/home_navigation_bar.dart';
 
 class TermsAndConditionsScreen extends StatelessWidget {
   const TermsAndConditionsScreen({super.key});
@@ -9,6 +10,7 @@ class TermsAndConditionsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.contentBackground,
+      bottomNavigationBar: const HomeNavigationBar(),
       body: Column(
         children: [
           Container(
@@ -26,16 +28,18 @@ class TermsAndConditionsScreen extends StatelessWidget {
                   icon: const Icon(Icons.arrow_back, color: Colors.black87),
                   onPressed: () => Navigator.pop(context),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  'Termos E Condições',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.poppins(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.titleColor,
+                Expanded(
+                  child: Text(
+                    'Termos E Condições',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.titleColor,
+                    ),
                   ),
                 ),
+                const SizedBox(width: 48),
               ],
             ),
           ),
@@ -97,20 +101,6 @@ class TermsAndConditionsScreen extends StatelessWidget {
                       style: GoogleFonts.leagueSpartan(
                         fontSize: 12,
                         color: Colors.blue,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Center(
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.fieldFillColor,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.home_outlined,
-                          color: Colors.black87,
-                        ),
                       ),
                     ),
                     const SizedBox(height: 20),

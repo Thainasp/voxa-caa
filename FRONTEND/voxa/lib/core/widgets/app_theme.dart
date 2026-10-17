@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:voxa/theme/app_colors.dart';
+import 'package:voxa/core/widgets/app_colors.dart';
 
 class AppTheme {
   static ThemeData get theme {

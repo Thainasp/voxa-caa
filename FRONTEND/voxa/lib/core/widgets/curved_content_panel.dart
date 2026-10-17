@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../theme/app_colors.dart';
+import 'package:voxa/core/widgets/app_colors.dart';
 
 class CurvedContentPanel extends StatelessWidget {
   final Widget child;

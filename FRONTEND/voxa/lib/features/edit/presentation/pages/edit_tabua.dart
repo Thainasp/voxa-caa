@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../../theme/app_colors.dart';
+import 'package:voxa/core/widgets/app_colors.dart';
 import '../../../../core/widgets/base_screen_layout.dart';
 import '../../../../core/widgets/home_navigation_bar.dart';
 
