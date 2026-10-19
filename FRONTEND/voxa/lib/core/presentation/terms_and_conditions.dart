@@ -87,7 +87,7 @@ class TermsAndConditionsScreen extends StatelessWidget {
                       'provident. Eum voluptas error et optio dolorum cum molestiae nobis et '
                       'odit molestiae quo magnam impedit sed fugiat nihil non nihil vitae.',
                       textAlign: TextAlign.justify,
-                      style: GoogleFonts.leagueSpartan(
+                      style: GoogleFonts.poppins(
                         fontSize: 13,
                         fontWeight: FontWeight.w300,
                         color: Colors.black87,
@@ -98,7 +98,7 @@ class TermsAndConditionsScreen extends StatelessWidget {
                     Text(
                       'Read the terms and conditions in more detail at\nwww.finwiseapp.de',
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.leagueSpartan(
+                      style: GoogleFonts.poppins(
                         fontSize: 12,
                         color: Colors.blue,
                       ),

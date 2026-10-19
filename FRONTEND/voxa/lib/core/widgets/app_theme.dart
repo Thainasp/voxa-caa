@@ -1,23 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:voxa/core/widgets/app_colors.dart';
 
 class AppTheme {
   static ThemeData get theme {
+    final textTheme = GoogleFonts.poppinsTextTheme();
+
     return ThemeData(
-      scaffoldBackgroundColor: AppColors.headerGreen, //cor de fundo padrão dos Scaffold do aplicativo.
+      scaffoldBackgroundColor: AppColors.headerGreen,
+      fontFamily: GoogleFonts.poppins().fontFamily,
+      textTheme: textTheme,
+      primaryTextTheme: GoogleFonts.poppinsTextTheme(
+        ThemeData.light().primaryTextTheme,
+      ),
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.headerGreen,
         primary: AppColors.headerGreen,
         surface: AppColors.contentBackground,
       ),
-      inputDecorationTheme: InputDecorationTheme(// campos de entrada.
+      inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.fieldFillColor,
-        contentPadding: const EdgeInsets.symmetric(//espaçamento
+        contentPadding: const EdgeInsets.symmetric(
           horizontal: 20,
           vertical: 16,
         ),
-        border: OutlineInputBorder(//bordas
+        border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(25.0),
           borderSide: BorderSide.none,
         ),
@@ -32,7 +40,10 @@ class AppTheme {
             width: 1.5,
           ),
         ),
-        hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+        hintStyle: GoogleFonts.poppins(
+          color: Colors.grey.shade500,
+          fontSize: 14,
+        ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -42,7 +53,10 @@ class AppTheme {
             borderRadius: BorderRadius.circular(25.0),
           ),
           padding: const EdgeInsets.symmetric(vertical: 14),
-          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          textStyle: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       ),
     );

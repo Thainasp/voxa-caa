@@ -88,11 +88,15 @@ class _LoginScreenState extends State<LoginScreen> {
           .maybeSingle();
 
       final userProfile = userData != null
-          ? UserModel.fromMap(userData)
+          ? UserModel.fromMap({
+              ...userData,
+              'avatar_url': authUser.userMetadata?['avatar_url'],
+            })
           : UserModel(
               id: authUser.id,
               name: authUser.email?.split('@').first ?? 'Usuário',
               email: authUser.email ?? '',
+              avatarUrl: authUser.userMetadata?['avatar_url'] as String?,
             );
 
       await SystemChrome.setPreferredOrientations([
@@ -239,7 +243,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         },
                         child: Text(
                           'Esqueceu a senha?',
-                          style: GoogleFonts.leagueSpartan(
+                          style: GoogleFonts.poppins(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: Colors.black87,
@@ -268,7 +272,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Center(
                       child: Text(
                         'ou faça login com',
-                        style: GoogleFonts.leagueSpartan(
+                        style: GoogleFonts.poppins(
                           fontSize: 13,
                           fontWeight: FontWeight.w300,
                           color: Colors.grey.shade700,
@@ -293,7 +297,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       children: [
                         Text(
                           'Não tem cadastro? ',
-                          style: GoogleFonts.leagueSpartan(
+                          style: GoogleFonts.poppins(
                             fontSize: 13,
                             fontWeight: FontWeight.w300,
                             color: Colors.grey.shade700,
@@ -303,7 +307,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           onTap: _navigateToRegister,
                           child: Text(
                             'Cadastre-se',
-                            style: GoogleFonts.leagueSpartan(
+                            style: GoogleFonts.poppins(
                               fontSize: 13,
                               fontWeight: FontWeight.w300,
                               color: Colors.blue,

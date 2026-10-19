@@ -15,6 +15,7 @@ import 'package:voxa/features/profile/presentation/settings.dart';
 import 'package:voxa/core/presentation/terms_and_conditions.dart';
 import 'package:voxa/models/user_model.dart';
 import 'package:voxa/core/widgets/app_theme.dart';
+
 import 'features/home/presentation/pages/home.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();

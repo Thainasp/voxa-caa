@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:voxa/core/widgets/app_colors.dart';
+
 import '../../../../core/widgets/base_screen_layout.dart';
 import '../../../../core/widgets/curved_content_panel.dart';
 import '../../../../core/widgets/home_navigation_bar.dart';
@@ -30,8 +31,6 @@ class Edit_principal extends StatelessWidget {
     return BaseScreenLayout(
       title: 'Edição',
       body: CurvedContentPanel(
-        panelTop: 50,
-        scrollTop: 20,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: options

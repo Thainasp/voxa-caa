@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:voxa/features/auth/presentation/login.dart';
 import 'package:voxa/features/home/presentation/pages/home.dart';
+import 'package:voxa/features/profile/presentation/edit_profile.dart';
 import 'package:voxa/features/profile/presentation/profile.dart';
+import 'package:voxa/features/profile/presentation/switch_profile.dart';
 import 'package:voxa/core/widgets/home_navigation_bar.dart';
 import 'package:voxa/main.dart';
 import 'package:voxa/models/user_model.dart';
@@ -32,6 +35,7 @@ void main() {
 
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
+    SharedPreferences.setMockInitialValues({});
 
     // Inicialização segura para o ambiente de testes (não realiza requisições reais)
     // Permite que widgets que escutam o Supabase (como o initState do login) não deem erro
@@ -98,5 +102,38 @@ void main() {
 
     expect(find.text('Maria da Silva'), findsOneWidget);
     expect(find.bySemanticsLabel('Foto de perfil genérica'), findsOneWidget);
+  });
+
+  testWidgets('perfil não exibe a opção de editar favoritos', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(home: ProfilePage()));
+
+    expect(find.text('Editar Favoritos'), findsNothing);
+  });
+
+  testWidgets('adicionar perfil abre o cadastro de dependente', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SwitchProfileScreen(
+          user: UserModel(id: 'responsavel', name: 'Responsável', email: ''),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Adicionar perfil'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Novo perfil dependente'), findsOneWidget);
+  });
+
+  testWidgets('edição de perfil mostra controle para trocar foto', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(home: EditProfileScreen()));
+
+    expect(find.byTooltip('Trocar foto de perfil'), findsOneWidget);
   });
 }

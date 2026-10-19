@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:voxa/core/widgets/app_colors.dart';
+
 import '../../../../core/widgets/base_screen_layout.dart';
 import '../../../../core/widgets/curved_content_panel.dart';
 import '../../../../core/widgets/home_navigation_bar.dart';
@@ -342,77 +343,84 @@ class _ItemEditorPageState extends State<_ItemEditorPage> {
           '${widget.item == null ? 'Novo' : 'Editar'} ${widget.itemType}',
         ),
       ),
-      body: SafeArea(
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Form(
-              key: _formKey,
-              child: ListView(
-                padding: const EdgeInsets.all(24),
-                children: [
-                  TextFormField(
-                    controller: _nameController,
-                    autofocus: true,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(
-                      labelText: 'Nome *',
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (value) => value == null || value.trim().isEmpty
-                        ? 'Informe o nome.'
-                        : null,
-                  ),
-                  const SizedBox(height: 18),
-                  if (isCard) ...[
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedBoardKey,
+      body: CurvedContentPanel(
+        panelTop: 0,
+        scrollTop: 0,
+        contentTopPadding: 24,
+        child: SafeArea(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextFormField(
+                      controller: _nameController,
+                      autofocus: true,
+                      textCapitalization: TextCapitalization.sentences,
                       decoration: const InputDecoration(
-                        labelText: 'Tábua',
+                        labelText: 'Nome *',
                         border: OutlineInputBorder(),
                       ),
-                      items: boards
-                          .map(
-                            (board) => DropdownMenuItem<String>(
-                              value: board['key'] as String,
-                              child: Text(board['label'] as String),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) => _selectedBoardKey = value,
                       validator: (value) =>
-                          value == null ? 'Selecione uma tábua.' : null,
+                          value == null || value.trim().isEmpty
+                          ? 'Informe o nome.'
+                          : null,
                     ),
                     const SizedBox(height: 18),
+                    if (isCard) ...[
+                      DropdownButtonFormField<String>(
+                        initialValue: _selectedBoardKey,
+                        decoration: const InputDecoration(
+                          labelText: 'Tábua',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: boards
+                            .map(
+                              (board) => DropdownMenuItem<String>(
+                                value: board['key'] as String,
+                                child: Text(board['label'] as String),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) => _selectedBoardKey = value,
+                        validator: (value) =>
+                            value == null ? 'Selecione uma tábua.' : null,
+                      ),
+                      const SizedBox(height: 18),
+                    ],
+                    TextFormField(
+                      controller: _imageController,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(
+                        labelText: 'Imagem (opcional)',
+                        hintText: 'URL ou caminho do arquivo',
+                        prefixIcon: Icon(Icons.image_outlined),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    TextFormField(
+                      controller: _audioController,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(
+                        labelText: 'Áudio (opcional)',
+                        hintText: 'URL ou caminho do arquivo',
+                        prefixIcon: Icon(Icons.audiotrack),
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton.icon(
+                      onPressed: _save,
+                      icon: const Icon(Icons.save_outlined),
+                      label: const Text('Salvar'),
+                    ),
                   ],
-                  TextFormField(
-                    controller: _imageController,
-                    keyboardType: TextInputType.url,
-                    decoration: const InputDecoration(
-                      labelText: 'Imagem (opcional)',
-                      hintText: 'URL ou caminho do arquivo',
-                      prefixIcon: Icon(Icons.image_outlined),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  TextFormField(
-                    controller: _audioController,
-                    keyboardType: TextInputType.url,
-                    decoration: const InputDecoration(
-                      labelText: 'Áudio (opcional)',
-                      hintText: 'URL ou caminho do arquivo',
-                      prefixIcon: Icon(Icons.audiotrack),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _save,
-                    icon: const Icon(Icons.save_outlined),
-                    label: const Text('Salvar'),
-                  ),
-                ],
+                ),
               ),
             ),
           ),

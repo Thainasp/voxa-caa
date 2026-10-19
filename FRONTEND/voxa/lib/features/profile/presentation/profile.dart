@@ -10,12 +10,16 @@ import '../../../core/widgets/home_navigation_bar.dart';
 import '../../../models/user_model.dart';
 import '../../edit/presentation/pages/edit_principal.dart';
 import '../../profile/presentation/settings.dart';
-//import 'package:voxa/features/profile/presentation/edit_profile.dart';
+import 'edit_profile.dart';
+import 'switch_profile.dart';
 
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends StatefulWidget {
   final UserModel? user;
 
   const ProfilePage({super.key, this.user});
+
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
 
   static const _options = [
     _ProfileOptionData(icon: Icons.edit_outlined, label: 'Editar perfil'),
@@ -24,10 +28,19 @@ class ProfilePage extends StatelessWidget {
       icon: Icons.add_box_outlined,
       label: 'Editar Cartões/Tabelas',
     ),
-    _ProfileOptionData(icon: Icons.favorite_border, label: 'Editar Favoritos'),
     _ProfileOptionData(icon: Icons.settings_outlined, label: 'Configuração'),
     _ProfileOptionData(icon: Icons.logout, label: 'Sair', isDestructive: true),
   ];
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  UserModel? _user;
+
+  @override
+  void initState() {
+    super.initState();
+    _user = widget.user;
+  }
 
   Future<void> _showLogoutDialog(BuildContext context) async {
     return showDialog<void>(
@@ -61,7 +74,7 @@ class ProfilePage extends StatelessWidget {
                 Text(
                   'Tem certeza que deseja sair?',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.leagueSpartan(
+                  style: GoogleFonts.poppins(
                     fontSize: 17,
                     fontWeight: FontWeight.w400,
                     color: AppColors.titleColor,
@@ -132,7 +145,10 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  void _handleOptionTap(BuildContext context, _ProfileOptionData option) {
+  Future<void> _handleOptionTap(
+    BuildContext context,
+    _ProfileOptionData option,
+  ) async {
     if (option.isDestructive) {
       _showLogoutDialog(context);
       return;
@@ -144,14 +160,20 @@ class ProfilePage extends StatelessWidget {
             .push(MaterialPageRoute(builder: (_) => const Edit_principal()));
         break;
       case 'Editar perfil':
-        // Conectar tela de edição de perfil quando estiver pronta
-        // Navigator.of(context).pushNamed('/edit_profile');
+        final updatedUser = await Navigator.of(context).push<UserModel>(
+          MaterialPageRoute(builder: (_) => EditProfileScreen(user: _user)),
+        );
+        if (updatedUser != null && mounted) {
+          setState(() => _user = updatedUser);
+        }
         break;
       case 'Trocar de Perfil':
-        // Conectar tela trocar de perfil quando estiver pronta
-        break;
-      case 'Editar Favoritos':
-        // Conectar tela de favoritos quando estiver pronta
+        final selectedUser = await Navigator.of(context).push<UserModel>(
+          MaterialPageRoute(builder: (_) => SwitchProfileScreen(user: _user)),
+        );
+        if (selectedUser != null && mounted) {
+          setState(() => _user = selectedUser);
+        }
         break;
       case 'Configuração':
         Navigator.of(context)
@@ -176,23 +198,36 @@ class ProfilePage extends StatelessWidget {
             color: AppColors.contentBackground,
             shape: BoxShape.circle,
           ),
-          child: ClipOval(
-            child: ColoredBox(
-              color: AppColors.categoryBlue,
-              child: const Icon(
-                Icons.person,
-                color: AppColors.contentBackground,
-                size: 52,
-                semanticLabel: 'Foto de perfil',
-              ),
-            ),
+          child: CircleAvatar(
+            backgroundColor: AppColors.categoryBlue,
+            child: _user?.avatarUrl == null
+                ? const Icon(
+                    Icons.person,
+                    color: AppColors.contentBackground,
+                    size: 52,
+                    semanticLabel: 'Foto de perfil',
+                  )
+                : ClipOval(
+                    child: Image.network(
+                      _user!.avatarUrl!,
+                      width: 104,
+                      height: 104,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => const Icon(
+                        Icons.person,
+                        color: AppColors.contentBackground,
+                        size: 52,
+                        semanticLabel: 'Foto de perfil',
+                      ),
+                    ),
+                  ),
           ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              user?.name ?? 'Usuário',
+              _user?.name ?? 'Usuário',
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
                 color: AppColors.titleColor,
@@ -201,7 +236,7 @@ class ProfilePage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            for (final option in _options) ...[
+            for (final option in ProfilePage._options) ...[
               Material(
                 color: Colors.transparent,
                 child: InkWell(

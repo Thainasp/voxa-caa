@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:voxa/core/widgets/app_colors.dart';
 
-class CategoryNavigation extends StatelessWidget {
+class CategoryNavigation extends StatefulWidget {
   final List<Map<String, dynamic>> categories;
   final String selectedKey;
   final ValueChanged<String> onCategorySelected;
@@ -10,18 +10,31 @@ class CategoryNavigation extends StatelessWidget {
   final double iconSize;
 
   const CategoryNavigation({
-    Key? key,
+    super.key,
     required this.categories,
     required this.selectedKey,
     required this.onCategorySelected,
     this.height = 96,
     this.iconSize = 52,
-  }) : super(key: key);
+  });
+
+  @override
+  State<CategoryNavigation> createState() => _CategoryNavigationState();
+}
+
+class _CategoryNavigationState extends State<CategoryNavigation> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: height,
+      height: widget.height,
       decoration: BoxDecoration(
         color: AppColors.contentBackground,
         borderRadius: BorderRadius.circular(32),
@@ -30,44 +43,54 @@ class CategoryNavigation extends StatelessWidget {
         children: [
           _NavigationArrow(
             icon: Icons.chevron_left,
-            onPressed: () => _selectRelativeCategory(-1),
+            tooltip: 'Mostrar categorias anteriores',
+            onPressed: () => _scrollCategories(-1),
           ),
           Expanded(
             child: ListView.separated(
+              controller: _scrollController,
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 6),
-              itemCount: categories.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemCount: widget.categories.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
               itemBuilder: (context, index) {
-                final category = categories[index];
-                final isSelected = category['key'] == selectedKey;
+                final category = widget.categories[index];
+                final isSelected = category['key'] == widget.selectedKey;
                 return _CategoryNavigationItem(
                   label: category['label'] as String,
                   icon: category['icon'] as IconData,
-                  iconSize: iconSize,
+                  iconSize: widget.iconSize,
                   isSelected: isSelected,
-                  onTap: () => onCategorySelected(category['key'] as String),
+                  onTap: () =>
+                      widget.onCategorySelected(category['key'] as String),
                 );
               },
             ),
           ),
           _NavigationArrow(
             icon: Icons.chevron_right,
-            onPressed: () => _selectRelativeCategory(1),
+            tooltip: 'Mostrar próximas categorias',
+            onPressed: () => _scrollCategories(1),
           ),
         ],
       ),
     );
   }
 
-  void _selectRelativeCategory(int offset) {
-    final selectedIndex = categories.indexWhere(
-      (category) => category['key'] == selectedKey,
-    );
-    if (selectedIndex == -1 || categories.isEmpty) return;
+  void _scrollCategories(int direction) {
+    if (!_scrollController.hasClients) return;
 
-    final nextIndex = (selectedIndex + offset).clamp(0, categories.length - 1);
-    onCategorySelected(categories[nextIndex]['key'] as String);
+    final position = _scrollController.position;
+    final target =
+        (position.pixels + direction * position.viewportDimension * 0.8)
+            .clamp(0.0, position.maxScrollExtent)
+            .toDouble();
+
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
   }
 }
 
@@ -115,16 +138,21 @@ class _CategoryNavigationItem extends StatelessWidget {
 
 class _NavigationArrow extends StatelessWidget {
   final IconData icon;
+  final String tooltip;
   final VoidCallback onPressed;
 
-  const _NavigationArrow({required this.icon, required this.onPressed});
+  const _NavigationArrow({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
 
   @override
   Widget build(BuildContext context) {
     return IconButton(
       icon: Icon(icon, color: Colors.black87, size: 48),
       onPressed: onPressed,
-      tooltip: 'Navegar entre categorias',
+      tooltip: tooltip,
     );
   }
 }

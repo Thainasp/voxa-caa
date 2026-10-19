@@ -1,4 +1,5 @@
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:voxa/core/widgets/app_colors.dart';
@@ -51,12 +52,13 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         curve: const Interval(0.0, 0.45, curve: Curves.easeOut),
       ),
     );
-    _logoSlide = Tween<Offset>(begin: const Offset(0, -35), end: Offset.zero).animate(
-      CurvedAnimation(
-        parent: _staggerController,
-        curve: const Interval(0.0, 0.45, curve: Curves.easeOutCubic),
-      ),
-    );
+    _logoSlide = Tween<Offset>(begin: const Offset(0, -35), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _staggerController,
+            curve: const Interval(0.0, 0.45, curve: Curves.easeOutCubic),
+          ),
+        );
 
     _titleFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
@@ -70,12 +72,13 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         curve: const Interval(0.2, 0.65, curve: Curves.easeOut),
       ),
     );
-    _titleSlide = Tween<Offset>(begin: const Offset(0, -35), end: Offset.zero).animate(
-      CurvedAnimation(
-        parent: _staggerController,
-        curve: const Interval(0.2, 0.65, curve: Curves.easeOutCubic),
-      ),
-    );
+    _titleSlide = Tween<Offset>(begin: const Offset(0, -35), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _staggerController,
+            curve: const Interval(0.2, 0.65, curve: Curves.easeOutCubic),
+          ),
+        );
 
     _subtitleFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
@@ -89,12 +92,13 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         curve: const Interval(0.4, 0.85, curve: Curves.easeOut),
       ),
     );
-    _subtitleSlide = Tween<Offset>(begin: const Offset(0, 35), end: Offset.zero).animate(
-      CurvedAnimation(
-        parent: _staggerController,
-        curve: const Interval(0.4, 0.85, curve: Curves.easeOutCubic),
-      ),
-    );
+    _subtitleSlide = Tween<Offset>(begin: const Offset(0, 35), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _staggerController,
+            curve: const Interval(0.4, 0.85, curve: Curves.easeOutCubic),
+          ),
+        );
 
     _buttonsFade = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
@@ -108,12 +112,13 @@ class _WelcomeScreenState extends State<WelcomeScreen>
         curve: const Interval(0.6, 1.0, curve: Curves.easeOut),
       ),
     );
-    _buttonsSlide = Tween<Offset>(begin: const Offset(0, 45), end: Offset.zero).animate(
-      CurvedAnimation(
-        parent: _staggerController,
-        curve: const Interval(0.6, 1.0, curve: Curves.easeOutCubic),
-      ),
-    );
+    _buttonsSlide = Tween<Offset>(begin: const Offset(0, 45), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _staggerController,
+            curve: const Interval(0.6, 1.0, curve: Curves.easeOutCubic),
+          ),
+        );
 
     _staggerController.forward();
   }
@@ -157,7 +162,10 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       body: SafeArea(
         child: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 24.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 32.0,
+              vertical: 24.0,
+            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -198,7 +206,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   child: Text(
                     'Comunicação alternativa simples,\nintuitiva e feita para você.',
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.leagueSpartan(
+                    style: GoogleFonts.poppins(
                       fontSize: 14,
                       fontWeight: FontWeight.w400,
                       color: AppColors.textColor,
@@ -263,7 +271,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         },
                         child: Text(
                           'Esqueceu a senha?',
-                          style: GoogleFonts.leagueSpartan(
+                          style: GoogleFonts.poppins(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: AppColors.titleColor,

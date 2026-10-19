@@ -31,14 +31,13 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 3600),
     );
 
-    _fadeAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeIn,
-    );
+    _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
 
     _controller.forward();
 
-    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((
+      data,
+    ) {
       if (data.event == AuthChangeEvent.passwordRecovery && !_isNavigating) {
         _isNavigating = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -51,7 +50,8 @@ class _SplashScreenState extends State<SplashScreen>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final uri = Uri.base;
-      final isRecoveryUrl = uri.fragment.contains('type=recovery') ||
+      final isRecoveryUrl =
+          uri.fragment.contains('type=recovery') ||
           uri.queryParameters['type'] == 'recovery';
 
       if (isRecoveryUrl) {
@@ -95,10 +95,7 @@ class _SplashScreenState extends State<SplashScreen>
                     sigmaX: blurValue,
                     sigmaY: blurValue,
                   ),
-                  child: FadeTransition(
-                    opacity: curved,
-                    child: child,
-                  ),
+                  child: FadeTransition(opacity: curved, child: child),
                 );
               },
             );

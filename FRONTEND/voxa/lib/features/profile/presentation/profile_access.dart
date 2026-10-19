@@ -80,6 +80,7 @@ class _ProfileAccessScreenState extends State<ProfileAccessScreen> {
           id: response.user!.id,
           email: response.user!.email!,
           name: userName,
+          avatarUrl: response.user!.userMetadata?['avatar_url'] as String?,
         );
 
         if (mounted) {

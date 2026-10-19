@@ -291,7 +291,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             },
                             child: Text(
                               'Ao se cadastrar voce aceita os termos de uso e privacidade.',
-                              style: GoogleFonts.leagueSpartan(
+                              style: GoogleFonts.poppins(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w400,
                                 color: Colors.black87,
@@ -327,7 +327,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       children: [
                         Text(
                           'Já tem conta? ',
-                          style: GoogleFonts.leagueSpartan(
+                          style: GoogleFonts.poppins(
                             fontSize: 13,
                             fontWeight: FontWeight.w300,
                             color: Colors.grey.shade700,
@@ -337,7 +337,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           onTap: _goToLogin,
                           child: Text(
                             'Acesse',
-                            style: GoogleFonts.leagueSpartan(
+                            style: GoogleFonts.poppins(
                               fontSize: 13,
                               fontWeight: FontWeight.w300,
                               color: Colors.blue,

@@ -115,7 +115,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     const SizedBox(height: 10),
                     Text(
                       'Adicione seu email para receber um link para alteração de senha',
-                      style: GoogleFonts.leagueSpartan(
+                      style: GoogleFonts.poppins(
                         fontSize: 14,
                         fontWeight: FontWeight.w400,
                         color: Colors.black87,
@@ -178,7 +178,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     Center(
                       child: Text(
                         'ou faça login com',
-                        style: GoogleFonts.leagueSpartan(
+                        style: GoogleFonts.poppins(
                           fontSize: 13,
                           fontWeight: FontWeight.w300,
                           color: Colors.grey.shade700,
@@ -203,7 +203,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       children: [
                         Text(
                           'Não tem cadastro? ',
-                          style: GoogleFonts.leagueSpartan(
+                          style: GoogleFonts.poppins(
                             fontSize: 13,
                             fontWeight: FontWeight.w300,
                             color: Colors.grey.shade700,
@@ -216,7 +216,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           ),
                           child: Text(
                             'Cadastre-se',
-                            style: GoogleFonts.leagueSpartan(
+                            style: GoogleFonts.poppins(
                               fontSize: 13,
                               fontWeight: FontWeight.w300,
                               color: Colors.blue,
