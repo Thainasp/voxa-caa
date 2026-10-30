@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'package:voxa/core/widgets/app_colors.dart';
 
@@ -31,6 +32,7 @@ class Edit_principal extends StatelessWidget {
     return BaseScreenLayout(
       title: 'Edição',
       body: CurvedContentPanel(
+        contentTopPadding: 24,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: options
@@ -64,8 +66,8 @@ class Edit_principal extends StatelessWidget {
                       child: Row(
                         children: [
                           Container(
-                            width: 45,
-                            height: 45,
+                            width: 52,
+                            height: 52,
                             decoration: BoxDecoration(
                               color: AppColors.headerGreen,
                               borderRadius: BorderRadius.circular(16),
@@ -73,7 +75,7 @@ class Edit_principal extends StatelessWidget {
                             child: Icon(
                               option.icon,
                               color: Colors.white,
-                              size: 24,
+                              size: 26,
                             ),
                           ),
                           const SizedBox(width: 16),
@@ -81,10 +83,11 @@ class Edit_principal extends StatelessWidget {
                             child: Text(
                               option.label,
                               softWrap: true,
-                              style: const TextStyle(
-                                color: Color(0xFF24332E),
-                                fontSize: 17,
-                                fontWeight: FontWeight.w600,
+                              style: GoogleFonts.poppins(
+                                color: AppColors.titleColor,
+                                fontSize: 15,
+                                fontWeight:
+                                    FontWeight.w500,
                               ),
                             ),
                           ),

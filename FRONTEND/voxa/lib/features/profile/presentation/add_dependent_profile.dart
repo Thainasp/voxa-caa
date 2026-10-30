@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -102,25 +100,26 @@ class _AddDependentProfileScreenState extends State<AddDependentProfileScreen> {
 
     setState(() => _isSaving = true);
     try {
-      final metadata = authUser.userMetadata ?? const <String, dynamic>{};
-      final existingProfiles = metadata['dependentes'];
-      final dependents = existingProfiles is List
-          ? existingProfiles
-                .whereType<Map>()
-                .map((profile) => Map<String, dynamic>.from(profile))
-                .toList()
-          : <Map<String, dynamic>>[];
-      final profile = UserModel(
-        id: _createProfileId(),
-        name: _nameController.text.trim(),
-        email: '',
-        isDependent: true,
+      final nome = _nameController.text.trim();
+
+      final novoPerfil = await client
+          .from('perfil')
+          .insert({
+            'usuario_id': authUser.id,
+            'nome': nome,
+            'is_responsavel': false,
+          })
+          .select()
+          .single();
+
+      final perfilId = novoPerfil['id'] as String;
+
+      await client.rpc(
+        'criar_conteudo_padrao_perfil',
+        params: {'novo_perfil_id': perfilId},
       );
 
-      dependents.add(profile.toMetadataMap());
-      await client.auth.updateUser(
-        UserAttributes(data: {'dependentes': dependents}),
-      );
+      final profile = UserModel(id: perfilId, name: nome, isResponsavel: false);
 
       if (!mounted) return;
       Navigator.of(context).pop(profile);
@@ -129,18 +128,6 @@ class _AddDependentProfileScreenState extends State<AddDependentProfileScreen> {
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
-  }
-
-  String _createProfileId() {
-    final random = Random.secure();
-    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    final hex = bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0'));
-    final value = hex.join();
-    return '${value.substring(0, 8)}-${value.substring(8, 12)}-'
-        '${value.substring(12, 16)}-${value.substring(16, 20)}-'
-        '${value.substring(20)}';
   }
 
   void _showMessage(String message) {

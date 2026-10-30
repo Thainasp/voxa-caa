@@ -35,8 +35,13 @@ class HomeNavigationBar extends StatelessWidget {
                   icon: const Icon(Icons.home, size: 26),
                   color: AppColors.selectedCategoryGreen,
                   tooltip: 'Início',
-                  onPressed:
-                      onHomePressed ?? () => _navigateToHomePage(context),
+                  onPressed: () {
+                    if (onHomePressed != null) {
+                      onHomePressed!();
+                    } else {
+                      _navigateToHomePage(context);
+                    }
+                  },
                 ),
               ),
             ),

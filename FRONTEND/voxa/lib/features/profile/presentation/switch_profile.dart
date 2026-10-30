@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voxa/core/widgets/app_colors.dart';
+import 'package:voxa/core/widgets/crown_icon.dart';
 
 import '../../../core/widgets/base_screen_layout.dart';
 import '../../../core/widgets/curved_content_panel.dart';
@@ -19,117 +20,47 @@ class SwitchProfileScreen extends StatefulWidget {
 }
 
 class _SwitchProfileScreenState extends State<SwitchProfileScreen> {
-  late final List<UserModel> _profiles;
+  List<UserModel> _profiles = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _profiles = _loadProfiles();
+    _fetchProfiles();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return BaseScreenLayout(
-      title: 'Trocar De Perfil',
-      body: CurvedContentPanel(
-        scrollTop: 42,
-        contentTopPadding: 28,
-        child: Column(
-          children: [
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final tileWidth = (constraints.maxWidth - 20) / 2;
-                return Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 20,
-                  runSpacing: 24,
-                  children: _profiles
-                      .map(
-                        (profile) => SizedBox(
-                          width: tileWidth,
-                          child: _ProfileChoice(
-                            user: profile,
-                            onTap: () => Navigator.of(context).pop(profile),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                );
-              },
-            ),
-            const SizedBox(height: 28),
-            SizedBox.square(
-              dimension: 64,
-              child: IconButton.filled(
-                onPressed: _addProfile,
-                icon: const Icon(Icons.add, size: 34),
-                style: IconButton.styleFrom(
-                  backgroundColor: AppColors.headerGreen,
-                  foregroundColor: Colors.white,
-                ),
-                tooltip: 'Adicionar perfil',
-              ),
-            ),
-          ],
-        ),
-      ),
-      bottomNavigationBar: const HomeNavigationBar(),
-    );
-  }
+  Future<void> _fetchProfiles() async {
+    final client = Supabase.instance.client;
+    final authUser = client.auth.currentUser;
+    if (authUser == null) return;
 
-  List<UserModel> _loadProfiles() {
-    final authUser = Supabase.instance.client.auth.currentUser;
-    final profiles = <UserModel>[];
+    try {
+      final data = await client
+          .from('perfil')
+          .select()
+          .eq('usuario_id', authUser.id)
+          .order('is_responsavel', ascending: false);
 
-    if (authUser != null) {
-      final metadata = authUser.userMetadata ?? const <String, dynamic>{};
-      profiles.add(
-        UserModel(
-          id: authUser.id,
-          name:
-              metadata['display_name'] as String? ??
-              metadata['nome'] as String? ??
-              authUser.email?.split('@').first ??
-              'Usuário',
-          email: authUser.email ?? '',
-          phone: metadata['telefone'] as String?,
-          avatarUrl: metadata['avatar_url'] as String?,
-          isResponsavel: true,
-        ),
-      );
-
-      final dependents = metadata['dependentes'];
-      if (dependents is List) {
-        profiles.addAll(
-          dependents.whereType<Map>().map(
-            (profile) => UserModel.fromMap(Map<String, dynamic>.from(profile)),
-          ),
+      final list = (data as List).map<UserModel>((item) {
+        final isResp = item['is_responsavel'] == true;
+        return UserModel(
+          id: item['id'],
+          name: item['nome'],
+          email: isResp ? (authUser.email ?? '') : '',
+          avatarUrl: item['avatar_url'],
+          isResponsavel: isResp,
         );
-      }
-    }
+      }).toList();
 
-    final currentProfile = widget.user;
-    if (currentProfile != null) {
-      final currentIndex = profiles.indexWhere(
-        (profile) => profile.id == currentProfile.id,
-      );
-      if (currentIndex == -1) {
-        profiles.insert(0, currentProfile);
-      } else {
-        profiles[currentIndex] = UserModel(
-          id: currentProfile.id,
-          name: currentProfile.name,
-          email: currentProfile.email,
-          phone: currentProfile.phone,
-          birthDate: currentProfile.birthDate,
-          isResponsavel: currentProfile.isResponsavel,
-          avatarUrl:
-              currentProfile.avatarUrl ?? profiles[currentIndex].avatarUrl,
-          isDependent: currentProfile.isDependent,
-        );
+      if (mounted) {
+        setState(() {
+          _profiles = list;
+          _isLoading = false;
+        });
       }
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
     }
-    return profiles;
   }
 
   Future<void> _addProfile() async {
@@ -139,6 +70,61 @@ class _SwitchProfileScreenState extends State<SwitchProfileScreen> {
     if (profile != null && mounted) {
       setState(() => _profiles.add(profile));
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BaseScreenLayout(
+      title: 'Trocar De Perfil',
+      body: CurvedContentPanel(
+        scrollTop: 42,
+        contentTopPadding: 28,
+        child: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(color: AppColors.headerGreen),
+              )
+            : Column(
+                children: [
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final tileWidth = (constraints.maxWidth - 20) / 2;
+                      return Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: 20,
+                        runSpacing: 24,
+                        children: _profiles
+                            .map(
+                              (profile) => SizedBox(
+                                width: tileWidth,
+                                child: _ProfileChoice(
+                                  user: profile,
+                                  onTap: () =>
+                                      Navigator.of(context).pop(profile),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 28),
+                  SizedBox.square(
+                    dimension: 64,
+                    child: IconButton.filled(
+                      onPressed: _addProfile,
+                      icon: const Icon(Icons.add, size: 34),
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.headerGreen,
+                        foregroundColor: Colors.white,
+                      ),
+                      tooltip: 'Adicionar perfil',
+                    ),
+                  ),
+                ],
+              ),
+      ),
+      bottomNavigationBar: const HomeNavigationBar(),
+    );
   }
 }
 
@@ -176,26 +162,37 @@ class _ProfileChoice extends StatelessWidget {
                           width: 60,
                           height: 60,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const Icon(
-                                Icons.person,
-                                size: 34,
-                                color: AppColors.contentBackground,
-                              ),
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.person,
+                            size: 34,
+                            color: AppColors.contentBackground,
+                          ),
                         ),
                       ),
               ),
               const SizedBox(height: 8),
-              Text(
-                user.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(
-                  color: AppColors.titleColor,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      user.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        color: AppColors.titleColor,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (user.isResponsavel) ...[
+                    const SizedBox(width: 4),
+                    const CrownIcon(size: 16),
+                  ],
+                ],
               ),
             ],
           ),

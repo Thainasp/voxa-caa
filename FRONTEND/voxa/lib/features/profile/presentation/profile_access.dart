@@ -5,12 +5,12 @@ import 'package:voxa/core/widgets/app_colors.dart';
 import 'package:voxa/core/widgets/custom_text_field.dart';
 import 'package:voxa/core/widgets/home_navigation_bar.dart';
 import 'package:voxa/models/user_model.dart';
-
 import 'package:voxa/features/profile/presentation/profile.dart';
-import 'package:voxa/features/home/presentation/pages/home.dart';
 
 class ProfileAccessScreen extends StatefulWidget {
-  const ProfileAccessScreen({super.key});
+  final UserModel? currentUser;
+
+  const ProfileAccessScreen({super.key, this.currentUser});
 
   @override
   State<ProfileAccessScreen> createState() => _ProfileAccessScreenState();
@@ -30,14 +30,7 @@ class _ProfileAccessScreenState extends State<ProfileAccessScreen> {
   }
 
   void _navigateToHome() {
-    if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    } else {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const HomePage()),
-        (route) => false,
-      );
-    }
+    Navigator.of(context).pop(widget.currentUser);
   }
 
   Future<void> _handleAccessProfile() async {
@@ -62,33 +55,58 @@ class _ProfileAccessScreenState extends State<ProfileAccessScreen> {
         password: _passwordController.text.trim(),
       );
 
-      if (response.user != null && mounted) {
-        final userData = await _supabase
-            .from('usuario')
-            .select('nome')
-            .eq('id', response.user!.id)
-            .maybeSingle();
+      final authUser = response.user;
+      if (authUser != null && mounted) {
+        UserModel profileToOpen;
 
-        final userName =
-            userData?['nome'] as String? ??
-            response.user!.userMetadata?['display_name'] as String? ??
-            response.user!.userMetadata?['nome'] as String? ??
-            response.user!.userMetadata?['name'] as String? ??
-            'Usuário';
+        if (widget.currentUser != null) {
+          profileToOpen = widget.currentUser!;
+        } else {
+          String profileId = authUser.id;
+          String profileName =
+              (authUser.userMetadata?['display_name'] ??
+                      authUser.userMetadata?['nome'] ??
+                      authUser.userMetadata?['name'] ??
+                      'Titular')
+                  .toString();
+          String? avatarUrl = authUser.userMetadata?['avatar_url'] as String?;
+          String? phone = authUser.userMetadata?['telefone'] as String?;
 
-        final userModel = UserModel(
-          id: response.user!.id,
-          email: response.user!.email!,
-          name: userName,
-          avatarUrl: response.user!.userMetadata?['avatar_url'] as String?,
+          try {
+            final perfilData = await _supabase
+                .from('perfil')
+                .select()
+                .eq('usuario_id', authUser.id)
+                .eq('is_responsavel', true)
+                .maybeSingle();
+
+            if (perfilData != null) {
+              profileId = perfilData['id'] as String;
+              if (perfilData['nome'] != null) profileName = perfilData['nome'];
+              if (perfilData['avatar_url'] != null)
+                avatarUrl = perfilData['avatar_url'];
+            }
+          } catch (_) {}
+
+          profileToOpen = UserModel(
+            id: profileId,
+            email: authUser.email!,
+            name: profileName,
+            phone: phone,
+            avatarUrl: avatarUrl,
+            isResponsavel: true,
+          );
+        }
+
+        // Abre a tela de perfil e devolve o perfil resultante para a Home
+        final result = await Navigator.of(context).push<UserModel>(
+          MaterialPageRoute(
+            builder: (context) => ProfilePage(user: profileToOpen),
+          ),
         );
 
         if (mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => ProfilePage(user: userModel),
-            ),
-          );
+          Navigator.of(context).pop(result ?? profileToOpen);
         }
       }
     } on AuthException catch (e) {
@@ -104,7 +122,7 @@ class _ProfileAccessScreenState extends State<ProfileAccessScreen> {
           ),
         );
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -265,7 +283,7 @@ class _ProfileAccessScreenState extends State<ProfileAccessScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: const HomeNavigationBar(),
+      bottomNavigationBar: HomeNavigationBar(onHomePressed: _navigateToHome),
     );
   }
 }
