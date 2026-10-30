@@ -3,8 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:voxa/core/widgets/app_colors.dart';
+import 'package:voxa/core/widgets/crown_icon.dart';
 
-import '../../../core/widgets/base_screen_layout.dart';
 import '../../../core/widgets/curved_content_panel.dart';
 import '../../../core/widgets/home_navigation_bar.dart';
 import '../../../models/user_model.dart';
@@ -20,17 +20,6 @@ class ProfilePage extends StatefulWidget {
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
-
-  static const _options = [
-    _ProfileOptionData(icon: Icons.edit_outlined, label: 'Editar perfil'),
-    _ProfileOptionData(icon: Icons.swap_horiz, label: 'Trocar de Perfil'),
-    _ProfileOptionData(
-      icon: Icons.add_box_outlined,
-      label: 'Editar Cartões/Tabelas',
-    ),
-    _ProfileOptionData(icon: Icons.settings_outlined, label: 'Configuração'),
-    _ProfileOptionData(icon: Icons.logout, label: 'Sair', isDestructive: true),
-  ];
 }
 
 class _ProfilePageState extends State<ProfilePage> {
@@ -40,6 +29,44 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     _user = widget.user;
+  }
+
+  void _onBackToHome() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(_user);
+    } else {
+      Navigator.of(context).pushReplacementNamed('/home', arguments: _user);
+    }
+  }
+
+  List<_ProfileOptionData> _getVisibleOptions() {
+    final isResp = _user?.isResponsavel == true;
+
+    return [
+      const _ProfileOptionData(
+        icon: Icons.edit_outlined,
+        label: 'Editar perfil',
+      ),
+      const _ProfileOptionData(
+        icon: Icons.swap_horiz,
+        label: 'Trocar de Perfil',
+      ),
+      const _ProfileOptionData(
+        icon: Icons.add_box_outlined,
+        label: 'Editar Cartões/Tabelas',
+      ),
+      if (isResp) ...[
+        const _ProfileOptionData(
+          icon: Icons.settings_outlined,
+          label: 'Configuração',
+        ),
+        const _ProfileOptionData(
+          icon: Icons.logout,
+          label: 'Sair',
+          isDestructive: true,
+        ),
+      ],
+    ];
   }
 
   Future<void> _showLogoutDialog(BuildContext context) async {
@@ -101,25 +128,18 @@ class _ProfilePageState extends State<ProfilePage> {
                         borderRadius: BorderRadius.circular(24),
                       ),
                     ),
-                    child: Text(
+                    child: const Text(
                       'Sim, sair',
-                      style: GoogleFonts.poppins(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.contentBackground,
-                      ),
+                      style: TextStyle(color: Colors.white),
                     ),
                   ),
                 ),
                 const SizedBox(height: 12),
-                // Botão "Cancelar"
                 SizedBox(
                   width: double.infinity,
                   height: 46,
                   child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(dialogContext).pop();
-                    },
+                    onPressed: () => Navigator.of(dialogContext).pop(),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.fieldFillColor,
                       elevation: 0,
@@ -179,115 +199,149 @@ class _ProfilePageState extends State<ProfilePage> {
         Navigator.of(context)
             .push(MaterialPageRoute(builder: (_) => const SettingsPage()));
         break;
-      default:
-        break;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return BaseScreenLayout(
-      title: 'Perfil',
-      body: CurvedContentPanel(
-        maxContentWidth: 720,
-        topOverlay: Container(
-          width: 104,
-          height: 104,
-          padding: const EdgeInsets.all(2),
-          decoration: const BoxDecoration(
-            color: AppColors.contentBackground,
-            shape: BoxShape.circle,
+    final options = _getVisibleOptions();
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _onBackToHome();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.headerGreen,
+        appBar: AppBar(
+          backgroundColor: AppColors.headerGreen,
+          foregroundColor: AppColors.titleColor,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _onBackToHome,
           ),
-          child: CircleAvatar(
-            backgroundColor: AppColors.categoryBlue,
-            child: _user?.avatarUrl == null
-                ? const Icon(
-                    Icons.person,
-                    color: AppColors.contentBackground,
-                    size: 52,
-                    semanticLabel: 'Foto de perfil',
-                  )
-                : ClipOval(
-                    child: Image.network(
-                      _user!.avatarUrl!,
-                      width: 104,
-                      height: 104,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => const Icon(
-                        Icons.person,
-                        color: AppColors.contentBackground,
-                        size: 52,
-                        semanticLabel: 'Foto de perfil',
+          centerTitle: true,
+          title: Text(
+            'Perfil',
+            style: GoogleFonts.poppins(
+              color: AppColors.titleColor,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        body: CurvedContentPanel(
+          maxContentWidth: 720,
+          topOverlay: Container(
+            width: 104,
+            height: 104,
+            padding: const EdgeInsets.all(2),
+            decoration: const BoxDecoration(
+              color: AppColors.contentBackground,
+              shape: BoxShape.circle,
+            ),
+            child: CircleAvatar(
+              backgroundColor: AppColors.categoryBlue,
+              child: _user?.avatarUrl == null
+                  ? const Icon(
+                      Icons.person,
+                      color: AppColors.contentBackground,
+                      size: 52,
+                    )
+                  : ClipOval(
+                      child: Image.network(
+                        _user!.avatarUrl!,
+                        width: 104,
+                        height: 104,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.person,
+                          color: AppColors.contentBackground,
+                          size: 52,
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      _user?.name ?? 'Usuário',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        color: AppColors.titleColor,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              _user?.name ?? 'Usuário',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                color: AppColors.titleColor,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
+                  if (_user?.isResponsavel == true) ...[
+                    const SizedBox(width: 8),
+                    const CrownIcon(size: 22),
+                  ],
+                ],
               ),
-            ),
-            const SizedBox(height: 16),
-            for (final option in ProfilePage._options) ...[
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  hoverColor: Colors.transparent,
-                  onTap: () => _handleOptionTap(context, option),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 56,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            color: AppColors.categoryBlue,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Icon(
-                            option.icon,
-                            color: AppColors.contentBackground,
-                            size: 28,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Text(
-                            option.label,
-                            softWrap: true,
-                            style: GoogleFonts.poppins(
-                              color: option.isDestructive
-                                  ? Colors.red.shade700
-                                  : AppColors.titleColor,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
+              const SizedBox(height: 16),
+              for (final option in options) ...[
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => _handleOptionTap(context, option),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 12,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: AppColors.categoryBlue,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(
+                              option.icon,
+                              color: AppColors.contentBackground,
+                              size: 28,
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Text(
+                              option.label,
+                              softWrap: true,
+                              style: GoogleFonts.poppins(
+                                color: option.isDestructive
+                                    ? Colors.red.shade700
+                                    : AppColors.titleColor,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
+                const SizedBox(height: 8),
+              ],
             ],
-          ],
+          ),
         ),
+        bottomNavigationBar: HomeNavigationBar(onHomePressed: _onBackToHome),
       ),
-      bottomNavigationBar: const HomeNavigationBar(),
     );
   }
 }

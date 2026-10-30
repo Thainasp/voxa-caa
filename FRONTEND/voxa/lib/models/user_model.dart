@@ -6,33 +6,40 @@ class UserModel {
   final String? birthDate;
   final bool isResponsavel;
   final String? avatarUrl;
-  final bool isDependent;
 
-  UserModel({
+  const UserModel({
     required this.id,
     required this.name,
-    required this.email,
+    this.email = '',
     this.phone,
     this.birthDate,
     this.isResponsavel = false,
     this.avatarUrl,
-    this.isDependent = false,
   });
 
+  bool get isDependent => !isResponsavel;
+
   factory UserModel.fromMap(Map<String, dynamic> map) {
+    // Trata tanto a coluna 'is_responsavel' quanto eventual 'is_dependente' legada
+    final isResp =
+        map['is_responsavel'] as bool? ??
+        (map.containsKey('is_dependente')
+            ? !(map['is_dependente'] as bool? ?? false)
+            : false);
+
     return UserModel(
-      id: map['id'] as String,
-      name: map['nome'] as String? ?? map['name'] as String? ?? '',
-      email: map['email'] ?? '',
-      phone: map['telefone'] as String?,
-      birthDate: map['data_nascimento'] as String?,
-      isResponsavel: map['is_responsavel'] ?? false,
-      avatarUrl: map['avatar_url'] as String? ?? map['avatarUrl'] as String?,
-      isDependent: map['is_dependent'] as bool? ?? false,
+      id: map['id']?.toString() ?? '',
+      name: (map['nome'] ?? map['name'] ?? map['display_name'] ?? '')
+          .toString(),
+      email: (map['email'] ?? '').toString(),
+      phone: map['telefone']?.toString(),
+      birthDate: map['data_nascimento']?.toString(),
+      isResponsavel: isResp,
+      avatarUrl: (map['avatar_url'] ?? map['avatarUrl'])?.toString(),
     );
   }
 
-  Map<String, dynamic> toMetadataMap() {
+  Map<String, dynamic> toMap() {
     return {
       'id': id,
       'nome': name,
@@ -41,7 +48,28 @@ class UserModel {
       'data_nascimento': birthDate,
       'is_responsavel': isResponsavel,
       'avatar_url': avatarUrl,
-      'is_dependent': isDependent,
     };
+  }
+
+  Map<String, dynamic> toMetadataMap() => toMap();
+
+  UserModel copyWith({
+    String? id,
+    String? name,
+    String? email,
+    String? phone,
+    String? birthDate,
+    bool? isResponsavel,
+    String? avatarUrl,
+  }) {
+    return UserModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      email: email ?? this.email,
+      phone: phone ?? this.phone,
+      birthDate: birthDate ?? this.birthDate,
+      isResponsavel: isResponsavel ?? this.isResponsavel,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+    );
   }
 }

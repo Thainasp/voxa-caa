@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:voxa/core/widgets/app_colors.dart';
 import 'package:voxa/core/widgets/custom_text_field.dart';
 import 'package:voxa/models/user_model.dart';
-import 'package:voxa/core/widgets/app_colors.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -65,13 +66,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       final name = _nameController.text.trim();
       final email = _emailController.text.trim();
+      final phone = _phoneController.text.trim();
       final password = _passwordController.text;
 
-      // 1. Cria a conta no Auth já enviando o display_name e metadados
       final response = await Supabase.instance.client.auth.signUp(
         email: email,
         password: password,
-        data: {'display_name': name, 'nome': name, 'name': name},
+        data: {
+          'display_name': name,
+          'nome': name,
+          'name': name,
+          'telefone': phone,
+        },
       );
 
       final authUser = response.user;
@@ -79,11 +85,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         throw const AuthException('Não foi possível registrar o usuário.');
       }
 
-      // 2. Atualiza/complementa a linha na tabela usuario criada pela trigger
       await Supabase.instance.client.from('usuario').upsert({
         'id': authUser.id,
         'nome': name,
         'email': email,
+        'telefone': phone,
         'data_nascimento': _formatDateToIso(_birthController.text),
         'is_responsavel': true,
       });
@@ -92,7 +98,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         id: authUser.id,
         name: name,
         email: email,
-        phone: _phoneController.text.trim(),
+        phone: phone,
         birthDate: _birthController.text.trim(),
       );
 

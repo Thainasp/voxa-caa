@@ -24,34 +24,98 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final TextEditingController _nameController;
   late final TextEditingController _phoneController;
   late final TextEditingController _emailController;
+
+  String _initialName = '';
+  String _initialPhone = '';
+  String _initialEmail = '';
+
   String? _avatarUrl;
+  bool _isLoading = true;
   bool _isSaving = false;
   bool _isUploadingPhoto = false;
+
+  bool get _isMaster => widget.user?.isResponsavel ?? true;
 
   @override
   void initState() {
     super.initState();
-    final authUser = Supabase.instance.client.auth.currentUser;
-    _nameController = TextEditingController(
-      text:
-          widget.user?.name ??
-          authUser?.userMetadata?['display_name'] as String? ??
-          'Usuário',
-    );
-    _phoneController = TextEditingController(
-      text:
-          widget.user?.phone ??
-          authUser?.userMetadata?['telefone'] as String? ??
-          '',
-    );
-    _emailController = TextEditingController(
-      text: widget.user?.email ?? authUser?.email ?? '',
-    );
-    _avatarUrl =
-        widget.user?.avatarUrl ??
-        (widget.user?.isDependent == true
-            ? null
-            : authUser?.userMetadata?['avatar_url'] as String?);
+    _nameController = TextEditingController();
+    _phoneController = TextEditingController();
+    _emailController = TextEditingController();
+
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final client = Supabase.instance.client;
+    final authUser = client.auth.currentUser;
+
+    if (!_isMaster) {
+      _initialName = widget.user?.name ?? 'Perfil';
+      _avatarUrl = widget.user?.avatarUrl;
+      _nameController.text = _initialName;
+    } else {
+      String name = widget.user?.name ?? '';
+      String phone = widget.user?.phone ?? '';
+      String email = widget.user?.email ?? authUser?.email ?? '';
+      String? avatar = widget.user?.avatarUrl;
+
+      if (authUser != null) {
+        try {
+          final data = await client
+              .from('usuario')
+              .select()
+              .eq('id', authUser.id)
+              .maybeSingle();
+
+          if (data != null) {
+            if ((data['nome'] as String?)?.isNotEmpty ?? false) {
+              name = data['nome'];
+            }
+            if ((data['email'] as String?)?.isNotEmpty ?? false) {
+              email = data['email'];
+            }
+            if (data['telefone'] != null) {
+              phone = data['telefone'].toString();
+            }
+            if (data['avatar_url'] != null) {
+              avatar = data['avatar_url'].toString();
+            }
+          }
+        } catch (_) {}
+
+        final meta = authUser.userMetadata;
+        if (meta != null) {
+          if (name.isEmpty) {
+            name =
+                (meta['display_name'] ??
+                        meta['nome'] ??
+                        meta['name'] ??
+                        'Usuário')
+                    .toString();
+          }
+          if (phone.isEmpty && meta['telefone'] != null) {
+            phone = meta['telefone'].toString();
+          }
+          if (avatar == null && meta['avatar_url'] != null) {
+            avatar = meta['avatar_url'].toString();
+          }
+        }
+      }
+
+      _initialName = name.isEmpty ? 'Usuário' : name;
+      _initialPhone = phone;
+      _initialEmail = email;
+
+      _nameController.text = _initialName;
+      _phoneController.text = _initialPhone;
+      _emailController.text = _initialEmail;
+      _avatarUrl = avatar;
+    }
+
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -62,11 +126,112 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
+  void _showImagePickerModal() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.contentBackground,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (BuildContext bottomSheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(
+                    Icons.camera_alt_outlined,
+                    color: AppColors.titleColor,
+                    size: 26,
+                  ),
+                  title: Text(
+                    'Tirar foto',
+                    style: GoogleFonts.poppins(
+                      color: AppColors.titleColor,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(bottomSheetContext).pop();
+                    _pickAndUploadPhoto(ImageSource.camera);
+                  },
+                ),
+                const Divider(
+                  color: Colors.black12,
+                  thickness: 0.8,
+                  height: 1,
+                  indent: 16,
+                  endIndent: 16,
+                ),
+                ListTile(
+                  leading: const Icon(
+                    Icons.image_outlined,
+                    color: AppColors.titleColor,
+                    size: 26,
+                  ),
+                  title: Text(
+                    'Escolher foto',
+                    style: GoogleFonts.poppins(
+                      color: AppColors.titleColor,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(bottomSheetContext).pop();
+                    _pickAndUploadPhoto(ImageSource.gallery);
+                  },
+                ),
+                if (_avatarUrl != null && _avatarUrl!.isNotEmpty) ...[
+                  const Divider(
+                    color: Colors.black12,
+                    thickness: 0.8,
+                    height: 1,
+                    indent: 16,
+                    endIndent: 16,
+                  ),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.delete_outline,
+                      color: Colors.redAccent,
+                      size: 26,
+                    ),
+                    title: Text(
+                      'Excluir foto',
+                      style: GoogleFonts.poppins(
+                        color: Colors.redAccent,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.of(bottomSheetContext).pop();
+                      setState(() {
+                        _avatarUrl = null;
+                      });
+                      _showMessage(
+                        'Foto removida. Toque em salvar para aplicar.',
+                      );
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return BaseScreenLayout(
-      title: 'Editar Meu Perfil',
+      title: 'Editar meu Perfil',
       body: CurvedContentPanel(
+        contentTopPadding: 72,
         topOverlay: Container(
           width: 104,
           height: 104,
@@ -84,7 +249,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ? const Icon(
                         Icons.person,
                         color: AppColors.contentBackground,
-                        size: 48,
+                        size: 52,
                       )
                     : ClipOval(
                         child: Image.network(
@@ -92,12 +257,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           width: 104,
                           height: 104,
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const Icon(
-                                Icons.person,
-                                color: AppColors.contentBackground,
-                                size: 48,
-                              ),
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.person,
+                            color: AppColors.contentBackground,
+                            size: 52,
+                          ),
                         ),
                       ),
               ),
@@ -107,147 +271,189 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 child: Material(
                   color: AppColors.headerGreen,
                   shape: const CircleBorder(),
-                  child: IconButton(
-                    onPressed: _isUploadingPhoto ? null : _changeProfilePhoto,
-                    tooltip: 'Trocar foto de perfil',
-                    icon: _isUploadingPhoto
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.camera_alt_outlined, size: 20),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: _isUploadingPhoto ? null : _showImagePickerModal,
+                    child: Padding(
+                      padding: const EdgeInsets.all(6.0),
+                      child: _isUploadingPhoto
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.camera_alt_outlined,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                    ),
                   ),
                 ),
               ),
             ],
           ),
         ),
-        contentTopPadding: 72,
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                _nameController.text,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(
-                  color: AppColors.titleColor,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
+        child: _isLoading
+            ? const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: CircularProgressIndicator(
+                    color: AppColors.headerGreen,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 26),
-              Text(
-                'Configuração de Perfil',
-                style: GoogleFonts.poppins(
-                  color: AppColors.titleColor,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _buildField(
-                label: 'Nome',
-                controller: _nameController,
-                validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Informe seu nome.'
-                    : null,
-              ),
-              const SizedBox(height: 14),
-              _buildField(
-                label: 'Telefone',
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 14),
-              if (widget.user?.isDependent != true) ...[
-                _buildField(
-                  label: 'Email',
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (value) => value == null || !value.contains('@')
-                      ? 'Informe um e-mail válido.'
-                      : null,
-                ),
-                const SizedBox(height: 22),
-              ] else
-                const SizedBox(height: 8),
-              Center(
-                child: SizedBox(
-                  width: 124,
-                  height: 42,
-                  child: FilledButton(
-                    onPressed: _isSaving ? null : _save,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.headerGreen,
-                      foregroundColor: AppColors.titleColor,
+              )
+            : Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      _nameController.text.isEmpty
+                          ? _initialName
+                          : _nameController.text,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        color: AppColors.titleColor,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                    child: _isSaving
-                        ? const SizedBox.square(
-                            dimension: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Text(
-                            'Salvar',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
+                    const SizedBox(height: 28),
+
+                    Text(
+                      'Configuração de Perfil',
+                      style: GoogleFonts.poppins(
+                        color: AppColors.titleColor,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    _buildFidelityField(
+                      label: 'Nome',
+                      controller: _nameController,
+                      onChanged: (val) => setState(() {}),
+                    ),
+                    const SizedBox(height: 16),
+
+                    if (_isMaster) ...[
+                      _buildFidelityField(
+                        label: 'Telefone',
+                        controller: _phoneController,
+                        keyboardType: TextInputType.phone,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildFidelityField(
+                        label: 'Email',
+                        controller: _emailController,
+                        keyboardType: TextInputType.emailAddress,
+                      ),
+                      const SizedBox(height: 32),
+                    ] else
+                      const SizedBox(height: 24),
+
+                    Center(
+                      child: SizedBox(
+                        width: 140,
+                        height: 44,
+                        child: ElevatedButton(
+                          onPressed: _isSaving ? null : _save,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.headerGreen,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(22),
                             ),
                           ),
-                  ),
+                          child: _isSaving
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Text(
+                                  'Salvar',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
       ),
       bottomNavigationBar: const HomeNavigationBar(),
     );
   }
 
-  Widget _buildField({
+  Widget _buildFidelityField({
     required String label,
     required TextEditingController controller,
     TextInputType? keyboardType,
-    String? Function(String?)? validator,
+    void Function(String)? onChanged,
   }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      validator: validator,
-      style: GoogleFonts.poppins(color: AppColors.titleColor, fontSize: 13),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: GoogleFonts.poppins(
-          color: AppColors.titleColor,
-          fontSize: 13,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 6.0, bottom: 6.0),
+          child: Text(
+            label,
+            style: GoogleFonts.poppins(
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              color: AppColors.titleColor,
+            ),
+          ),
         ),
-        filled: true,
-        fillColor: AppColors.fieldFillColor,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 11,
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          onChanged: onChanged,
+          style: GoogleFonts.poppins(
+            color: AppColors.textColor,
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+          ),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: AppColors.fieldFillColor,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 14,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(24),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(24),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(24),
+              borderSide: const BorderSide(
+                color: AppColors.headerGreen,
+                width: 1.2,
+              ),
+            ),
+          ),
         ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.headerGreen),
-        ),
-      ),
+      ],
     );
   }
 
   Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-
     final client = Supabase.instance.client;
     final authUser = client.auth.currentUser;
     if (authUser == null) {
@@ -257,28 +463,50 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     setState(() => _isSaving = true);
     try {
-      final name = _nameController.text.trim();
-      final email = _emailController.text.trim();
-      final phone = _phoneController.text.trim();
+      final name = _nameController.text.trim().isEmpty
+          ? _initialName
+          : _nameController.text.trim();
 
-      final updatedProfile = UserModel(
-        id: widget.user?.id ?? authUser.id,
-        name: name,
-        email: widget.user?.isDependent == true ? '' : email,
-        phone: phone,
-        birthDate: widget.user?.birthDate,
-        isResponsavel: widget.user?.isResponsavel ?? false,
-        avatarUrl: _avatarUrl,
-        isDependent: widget.user?.isDependent ?? false,
-      );
+      if (!_isMaster) {
+        await client
+            .from('perfil')
+            .update({'nome': name, 'avatar_url': _avatarUrl})
+            .eq('id', widget.user!.id);
 
-      if (updatedProfile.isDependent) {
-        await _saveDependentProfile(client, authUser, updatedProfile);
+        final updatedProfile = UserModel(
+          id: widget.user!.id,
+          name: name,
+          avatarUrl: _avatarUrl,
+          isResponsavel: false,
+        );
+
+        if (!mounted) return;
+        _showMessage('Perfil salvo com sucesso!');
+        Navigator.of(context).pop(updatedProfile);
       } else {
+        final phone = _phoneController.text.trim().isEmpty
+            ? _initialPhone
+            : _phoneController.text.trim();
+
+        final email = _emailController.text.trim().isEmpty
+            ? _initialEmail
+            : _emailController.text.trim();
+
         await client
             .from('usuario')
-            .update({'nome': name, 'email': email})
+            .update({
+              'nome': name,
+              'email': email,
+              'telefone': phone,
+              'avatar_url': _avatarUrl,
+            })
             .eq('id', authUser.id);
+
+        await client
+            .from('perfil')
+            .update({'nome': name, 'avatar_url': _avatarUrl})
+            .eq('usuario_id', authUser.id)
+            .eq('is_responsavel', true);
 
         await client.auth.updateUser(
           UserAttributes(
@@ -291,10 +519,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             },
           ),
         );
-      }
 
-      if (!mounted) return;
-      Navigator.of(context).pop(updatedProfile);
+        final updatedProfile = UserModel(
+          id: widget.user?.id ?? authUser.id,
+          name: name,
+          email: email,
+          phone: phone,
+          birthDate: widget.user?.birthDate,
+          avatarUrl: _avatarUrl,
+          isResponsavel: true,
+        );
+
+        if (!mounted) return;
+        _showMessage('Perfil salvo com sucesso!');
+        Navigator.of(context).pop(updatedProfile);
+      }
     } catch (error) {
       if (mounted) _showMessage('Não foi possível salvar o perfil: $error');
     } finally {
@@ -302,7 +541,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  Future<void> _changeProfilePhoto() async {
+  Future<void> _pickAndUploadPhoto(ImageSource source) async {
     final authUser = Supabase.instance.client.auth.currentUser;
     if (authUser == null) {
       _showMessage('Sua sessão expirou. Entre novamente.');
@@ -312,7 +551,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => _isUploadingPhoto = true);
     try {
       final selectedImage = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
+        source: source,
         imageQuality: 85,
       );
       if (selectedImage == null || !mounted) return;
@@ -334,38 +573,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       if (!mounted) return;
       setState(() => _avatarUrl = photoUrl);
-      _showMessage('Foto carregada. Toque em Salvar para aplicar.');
+      _showMessage('Foto carregada. Toque em salvar para aplicar.');
     } catch (error) {
       if (mounted) _showMessage('Não foi possível carregar a foto: $error');
     } finally {
       if (mounted) setState(() => _isUploadingPhoto = false);
     }
-  }
-
-  Future<void> _saveDependentProfile(
-    SupabaseClient client,
-    User user,
-    UserModel profile,
-  ) async {
-    final metadata = user.userMetadata ?? const <String, dynamic>{};
-    final existingProfiles = metadata['dependentes'];
-    final dependents = existingProfiles is List
-        ? existingProfiles
-              .whereType<Map>()
-              .map((item) => Map<String, dynamic>.from(item))
-              .toList()
-        : <Map<String, dynamic>>[];
-    final profileIndex = dependents.indexWhere(
-      (item) => item['id'] == profile.id,
-    );
-    if (profileIndex == -1) {
-      throw StateError('O perfil dependente não foi encontrado.');
-    }
-
-    dependents[profileIndex] = profile.toMetadataMap();
-    await client.auth.updateUser(
-      UserAttributes(data: {'dependentes': dependents}),
-    );
   }
 
   String _imageExtension(String fileName) {
