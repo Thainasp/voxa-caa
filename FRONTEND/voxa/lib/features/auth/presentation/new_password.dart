@@ -47,6 +47,11 @@ class _NewPasswordScreenState extends State<NewPasswordScreen> {
         ),
       );
 
+      // O link de recuperação deixa uma sessão aberta. Encerra para que a
+      // pessoa entre de fato com a nova senha (e o app não pule o login).
+      await Supabase.instance.client.auth.signOut();
+
+      if (!mounted) return;
       Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
     } on AuthException catch (error) {
       if (!mounted) return;

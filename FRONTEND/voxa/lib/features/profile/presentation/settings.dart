@@ -5,6 +5,7 @@ import 'package:voxa/core/widgets/app_colors.dart';
 
 import '../../../core/widgets/base_screen_layout.dart';
 import '../../../core/widgets/curved_content_panel.dart';
+import '../../../core/presentation/terms_and_conditions.dart';
 import '../../../core/widgets/home_navigation_bar.dart';
 import '../../profile/presentation/change_password.dart';
 import '../../profile/presentation/delete_account.dart';
@@ -19,7 +20,12 @@ class SettingsPage extends StatelessWidget {
         icon: Icons.notifications_none,
         title: 'Termos E Condições',
         onTap: () {
-          Navigator.of(context).pushNamed('/terms');
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) =>
+                  const TermsAndConditionsScreen(showHomeNavigation: true),
+            ),
+          );
         },
       ),
       _SettingsOptionData(
