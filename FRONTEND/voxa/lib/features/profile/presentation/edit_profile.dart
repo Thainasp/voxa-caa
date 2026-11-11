@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:voxa/core/state/active_profile.dart';
 import 'package:voxa/core/widgets/app_colors.dart';
 
 import '../../../core/widgets/base_screen_layout.dart';
@@ -30,6 +33,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   String _initialEmail = '';
 
   String? _avatarUrl;
+  String? _initialAvatarUrl;
+
+  /// Fotos enviadas ao Storage nesta sessão de edição. Se a pessoa sair sem
+  /// salvar, elas são apagadas (best-effort) para não ficarem órfãs.
+  final List<String> _sessionUploads = [];
+  bool _saved = false;
+
+  static const String _bucket = 'profile-photos';
+
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isUploadingPhoto = false;
@@ -51,8 +63,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final authUser = client.auth.currentUser;
 
     if (!_isMaster) {
-      _initialName = widget.user?.name ?? 'Perfil';
-      _avatarUrl = widget.user?.avatarUrl;
+      String name = widget.user?.name ?? 'Perfil';
+      String? avatar = widget.user?.avatarUrl;
+
+      if (widget.user != null) {
+        try {
+          final perfilData = await client
+              .from('perfil')
+              .select('nome, avatar_url')
+              .eq('id', widget.user!.id)
+              .maybeSingle();
+
+          if (perfilData != null) {
+            name = perfilData['nome'] ?? name;
+            avatar = perfilData['avatar_url'] ?? avatar;
+          }
+        } catch (_) {}
+      }
+
+      _initialName = name;
+      _avatarUrl = avatar;
+      _initialAvatarUrl = avatar;
       _nameController.text = _initialName;
     } else {
       String name = widget.user?.name ?? '';
@@ -64,7 +95,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         try {
           final data = await client
               .from('usuario')
-              .select()
+              .select('nome, email, telefone, avatar_url')
               .eq('id', authUser.id)
               .maybeSingle();
 
@@ -111,6 +142,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       _phoneController.text = _initialPhone;
       _emailController.text = _initialEmail;
       _avatarUrl = avatar;
+      _initialAvatarUrl = avatar;
     }
 
     if (mounted) {
@@ -120,6 +152,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   void dispose() {
+    if (!_saved) {
+      for (final url in _sessionUploads) {
+        unawaited(_removeStoredAvatar(url));
+      }
+    }
     _nameController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
@@ -150,7 +187,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     'Tirar foto',
                     style: GoogleFonts.poppins(
                       color: AppColors.titleColor,
-                      fontSize: 16,
+                      fontSize: 15,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -176,7 +213,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     'Escolher foto',
                     style: GoogleFonts.poppins(
                       color: AppColors.titleColor,
-                      fontSize: 16,
+                      fontSize: 15,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -203,15 +240,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       'Excluir foto',
                       style: GoogleFonts.poppins(
                         color: Colors.redAccent,
-                        fontSize: 16,
+                        fontSize: 15,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                     onTap: () {
                       Navigator.of(bottomSheetContext).pop();
-                      setState(() {
-                        _avatarUrl = null;
-                      });
+                      setState(() => _avatarUrl = null);
                       _showMessage(
                         'Foto removida. Toque em salvar para aplicar.',
                       );
@@ -226,10 +261,319 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
+  Future<void> _pickAndUploadPhoto(ImageSource source) async {
+    final authUser = Supabase.instance.client.auth.currentUser;
+    if (authUser == null) {
+      _showMessage('Sua sessão expirou. Entre novamente.');
+      return;
+    }
+
+    setState(() => _isUploadingPhoto = true);
+    try {
+      final selectedImage = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 85,
+      );
+      if (selectedImage == null || !mounted) return;
+
+      final extension = _imageExtension(selectedImage.name);
+      final contentType =
+          selectedImage.mimeType ?? _imageContentType(extension);
+      final ownerId = authUser.id;
+      final profileId = widget.user?.id ?? ownerId;
+      final stamp = DateTime.now().millisecondsSinceEpoch;
+      final path = '$ownerId/$profileId/avatar_$stamp.$extension';
+      final storage = Supabase.instance.client.storage.from(_bucket);
+
+      await storage.uploadBinary(
+        path,
+        await selectedImage.readAsBytes(),
+        fileOptions: FileOptions(contentType: contentType, upsert: false),
+      );
+
+      final photoUrl = storage.getPublicUrl(path);
+      _sessionUploads.add(photoUrl);
+
+      if (!mounted) return;
+      setState(() => _avatarUrl = photoUrl);
+      _showMessage('Foto carregada. Toque em salvar para aplicar.');
+    } catch (error) {
+      if (mounted) _showMessage('Não foi possível carregar a foto: $error');
+    } finally {
+      if (mounted) setState(() => _isUploadingPhoto = false);
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final client = Supabase.instance.client;
+    final authUser = client.auth.currentUser;
+    if (authUser == null) {
+      _showMessage('Sua sessão expirou. Entre novamente.');
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      final newName = _nameController.text.trim().isEmpty
+          ? _initialName
+          : _nameController.text.trim();
+
+      if (!_isMaster) {
+        final profileId = widget.user!.id;
+
+        await client
+            .from('perfil')
+            .update({'nome': newName, 'avatar_url': _avatarUrl})
+            .eq('id', profileId)
+            .eq('usuario_id', authUser.id);
+
+        final updatedProfile = UserModel(
+          id: profileId,
+          name: newName,
+          avatarUrl: _avatarUrl,
+          isResponsavel: false,
+        );
+
+        await _finishSave(
+          updatedProfile,
+          'Perfil dependente atualizado com sucesso!',
+        );
+      } else {
+        final newPhone = _phoneController.text.trim().isEmpty
+            ? _initialPhone
+            : _phoneController.text.trim();
+        final newEmail = _emailController.text.trim().isEmpty
+            ? _initialEmail
+            : _emailController.text.trim();
+
+        final emailChanged =
+            newEmail.isNotEmpty && newEmail != (authUser.email ?? '');
+
+        // 1º Supabase Auth (é a etapa que mais costuma falhar). Assim, se der
+        //    erro, nenhuma tabela foi alterada.
+        await client.auth.updateUser(
+          UserAttributes(
+            email: emailChanged ? newEmail : null,
+            data: {
+              'display_name': newName,
+              'nome': newName,
+              'telefone': newPhone,
+              'avatar_url': _avatarUrl,
+            },
+          ),
+        );
+
+        // 2º Tabelas. O e-mail NÃO é gravado em `usuario` aqui: a troca só
+        //    vale depois que a pessoa confirmar o link enviado ao novo e-mail.
+        await client
+            .from('usuario')
+            .update({
+              'nome': newName,
+              'telefone': newPhone,
+              'avatar_url': _avatarUrl,
+            })
+            .eq('id', authUser.id);
+
+        await client
+            .from('perfil')
+            .update({'nome': newName, 'avatar_url': _avatarUrl})
+            .eq('usuario_id', authUser.id)
+            .eq('is_responsavel', true);
+
+        final updatedProfile = UserModel(
+          id: widget.user?.id ?? authUser.id,
+          name: newName,
+          email: emailChanged ? (authUser.email ?? _initialEmail) : newEmail,
+          phone: newPhone,
+          birthDate: widget.user?.birthDate,
+          avatarUrl: _avatarUrl,
+          isResponsavel: true,
+        );
+
+        await _finishSave(
+          updatedProfile,
+          emailChanged
+              ? 'Perfil atualizado! Enviamos um link de confirmação para o novo e-mail.'
+              : 'Perfil atualizado com sucesso!',
+        );
+      }
+    } on PostgrestException catch (e) {
+      if (mounted) _showMessage('Erro ao salvar no banco: ${e.message}');
+    } on AuthException catch (e) {
+      if (mounted) _showMessage('Erro de autenticação: ${e.message}');
+    } catch (e) {
+      if (mounted) _showMessage('Não foi possível salvar as alterações: $e');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  String _imageExtension(String fileName) {
+    final extension = fileName.contains('.')
+        ? fileName.split('.').last.toLowerCase()
+        : 'jpg';
+    const supportedExtensions = {'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'};
+    return supportedExtensions.contains(extension) ? extension : 'jpg';
+  }
+
+  String _imageContentType(String extension) {
+    return switch (extension) {
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      'heic' => 'image/heic',
+      'heif' => 'image/heif',
+      _ => 'image/jpeg',
+    };
+  }
+
+  /// Conclui o salvamento: limpa fotos antigas/órfãs, atualiza o perfil ativo
+  /// do app (a Home e o Perfil reagem) e fecha a tela devolvendo o perfil.
+  Future<void> _finishSave(UserModel updated, String message) async {
+    _saved = true;
+
+    final toRemove = <String>{
+      ..._sessionUploads,
+      if (_initialAvatarUrl != null && _initialAvatarUrl!.isNotEmpty)
+        _initialAvatarUrl!,
+    }..remove(_avatarUrl);
+    for (final url in toRemove) {
+      unawaited(_removeStoredAvatar(url));
+    }
+
+    final active = ActiveProfile.current;
+    if (active == null || active.id == updated.id) {
+      ActiveProfile.set(updated);
+    }
+
+    if (!mounted) return;
+    _showMessage(message);
+    Navigator.of(context).pop(updated);
+  }
+
+  /// Apaga um arquivo do bucket a partir da URL pública (best-effort).
+  Future<void> _removeStoredAvatar(String url) async {
+    final marker = '/$_bucket/';
+    final index = url.indexOf(marker);
+    if (index == -1) return;
+
+    var path = url.substring(index + marker.length);
+    final query = path.indexOf('?');
+    if (query != -1) path = path.substring(0, query);
+    if (path.isEmpty) return;
+
+    try {
+      await Supabase.instance.client.storage.from(_bucket).remove([
+        Uri.decodeComponent(path),
+      ]);
+    } catch (_) {
+      // Sem permissão ou arquivo inexistente: ignora.
+    }
+  }
+
+  Widget _buildCameraButton() {
+    return Positioned(
+      right: 0,
+      bottom: 0,
+      child: Tooltip(
+        message: 'Trocar foto de perfil',
+        child: Material(
+          color: AppColors.headerGreen,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: _isUploadingPhoto ? null : _showImagePickerModal,
+            child: Padding(
+              padding: const EdgeInsets.all(6.0),
+              child: _isUploadingPhoto
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.camera_alt_outlined,
+                      size: 18,
+                      color: Colors.white,
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: AppColors.headerGreen),
+    );
+  }
+
+  Widget _buildFieldTitle(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 6.0, bottom: 6.0),
+      child: Text(
+        label,
+        style: GoogleFonts.poppins(
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+          color: AppColors.titleColor,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPillTextField({
+    required TextEditingController controller,
+    TextInputType? keyboardType,
+    void Function(String)? onChanged,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      onChanged: onChanged,
+      validator: validator,
+      style: GoogleFonts.poppins(
+        color: AppColors.textColor,
+        fontSize: 14,
+        fontWeight: FontWeight.w400,
+      ),
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: AppColors.fieldFillColor,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 14,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: const BorderSide(
+            color: AppColors.headerGreen,
+            width: 1.2,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return BaseScreenLayout(
-      title: 'Editar meu Perfil',
+      title: 'Editar',
       body: CurvedContentPanel(
         contentTopPadding: 72,
         topOverlay: Container(
@@ -265,34 +609,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ),
                       ),
               ),
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Material(
-                  color: AppColors.headerGreen,
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: _isUploadingPhoto ? null : _showImagePickerModal,
-                    child: Padding(
-                      padding: const EdgeInsets.all(6.0),
-                      child: _isUploadingPhoto
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(
-                              Icons.camera_alt_outlined,
-                              size: 18,
-                              color: Colors.white,
-                            ),
-                    ),
-                  ),
-                ),
-              ),
+              _buildCameraButton(),
             ],
           ),
         ),
@@ -323,34 +640,36 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ),
                     const SizedBox(height: 28),
 
-                    Text(
-                      'Configuração de Perfil',
-                      style: GoogleFonts.poppins(
-                        color: AppColors.titleColor,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    _buildFidelityField(
-                      label: 'Nome',
+                    _buildFieldTitle('Nome'),
+                    _buildPillTextField(
                       controller: _nameController,
                       onChanged: (val) => setState(() {}),
+                      validator: (val) => val == null || val.trim().isEmpty
+                          ? 'Informe o nome.'
+                          : null,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 18),
 
                     if (_isMaster) ...[
-                      _buildFidelityField(
-                        label: 'Telefone',
+                      _buildFieldTitle('Telefone'),
+                      _buildPillTextField(
                         controller: _phoneController,
                         keyboardType: TextInputType.phone,
                       ),
-                      const SizedBox(height: 16),
-                      _buildFidelityField(
-                        label: 'Email',
+                      const SizedBox(height: 18),
+
+                      _buildFieldTitle('Email'),
+                      _buildPillTextField(
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
+                        validator: (val) {
+                          if (val != null &&
+                              val.isNotEmpty &&
+                              !val.contains('@')) {
+                            return 'Informe um e-mail válido.';
+                          }
+                          return null;
+                        },
                       ),
                       const SizedBox(height: 32),
                     ] else
@@ -366,7 +685,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             backgroundColor: AppColors.headerGreen,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(22),
+                              borderRadius: BorderRadius.circular(24),
                             ),
                           ),
                           child: _isSaving
@@ -394,213 +713,5 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ),
       bottomNavigationBar: const HomeNavigationBar(),
     );
-  }
-
-  Widget _buildFidelityField({
-    required String label,
-    required TextEditingController controller,
-    TextInputType? keyboardType,
-    void Function(String)? onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 6.0, bottom: 6.0),
-          child: Text(
-            label,
-            style: GoogleFonts.poppins(
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-              color: AppColors.titleColor,
-            ),
-          ),
-        ),
-        TextFormField(
-          controller: controller,
-          keyboardType: keyboardType,
-          onChanged: onChanged,
-          style: GoogleFonts.poppins(
-            color: AppColors.textColor,
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-          ),
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: AppColors.fieldFillColor,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 14,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(24),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(24),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(24),
-              borderSide: const BorderSide(
-                color: AppColors.headerGreen,
-                width: 1.2,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _save() async {
-    final client = Supabase.instance.client;
-    final authUser = client.auth.currentUser;
-    if (authUser == null) {
-      _showMessage('Sua sessão expirou. Entre novamente.');
-      return;
-    }
-
-    setState(() => _isSaving = true);
-    try {
-      final name = _nameController.text.trim().isEmpty
-          ? _initialName
-          : _nameController.text.trim();
-
-      if (!_isMaster) {
-        await client
-            .from('perfil')
-            .update({'nome': name, 'avatar_url': _avatarUrl})
-            .eq('id', widget.user!.id);
-
-        final updatedProfile = UserModel(
-          id: widget.user!.id,
-          name: name,
-          avatarUrl: _avatarUrl,
-          isResponsavel: false,
-        );
-
-        if (!mounted) return;
-        _showMessage('Perfil salvo com sucesso!');
-        Navigator.of(context).pop(updatedProfile);
-      } else {
-        final phone = _phoneController.text.trim().isEmpty
-            ? _initialPhone
-            : _phoneController.text.trim();
-
-        final email = _emailController.text.trim().isEmpty
-            ? _initialEmail
-            : _emailController.text.trim();
-
-        await client
-            .from('usuario')
-            .update({
-              'nome': name,
-              'email': email,
-              'telefone': phone,
-              'avatar_url': _avatarUrl,
-            })
-            .eq('id', authUser.id);
-
-        await client
-            .from('perfil')
-            .update({'nome': name, 'avatar_url': _avatarUrl})
-            .eq('usuario_id', authUser.id)
-            .eq('is_responsavel', true);
-
-        await client.auth.updateUser(
-          UserAttributes(
-            email: email == authUser.email ? null : email,
-            data: {
-              'display_name': name,
-              'nome': name,
-              'telefone': phone,
-              'avatar_url': _avatarUrl,
-            },
-          ),
-        );
-
-        final updatedProfile = UserModel(
-          id: widget.user?.id ?? authUser.id,
-          name: name,
-          email: email,
-          phone: phone,
-          birthDate: widget.user?.birthDate,
-          avatarUrl: _avatarUrl,
-          isResponsavel: true,
-        );
-
-        if (!mounted) return;
-        _showMessage('Perfil salvo com sucesso!');
-        Navigator.of(context).pop(updatedProfile);
-      }
-    } catch (error) {
-      if (mounted) _showMessage('Não foi possível salvar o perfil: $error');
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
-  Future<void> _pickAndUploadPhoto(ImageSource source) async {
-    final authUser = Supabase.instance.client.auth.currentUser;
-    if (authUser == null) {
-      _showMessage('Sua sessão expirou. Entre novamente.');
-      return;
-    }
-
-    setState(() => _isUploadingPhoto = true);
-    try {
-      final selectedImage = await ImagePicker().pickImage(
-        source: source,
-        imageQuality: 85,
-      );
-      if (selectedImage == null || !mounted) return;
-
-      final extension = _imageExtension(selectedImage.name);
-      final contentType =
-          selectedImage.mimeType ?? _imageContentType(extension);
-      final ownerId = authUser.id;
-      final profileId = widget.user?.id ?? ownerId;
-      final path = '$ownerId/$profileId/avatar.$extension';
-      final storage = Supabase.instance.client.storage.from('profile-photos');
-      await storage.uploadBinary(
-        path,
-        await selectedImage.readAsBytes(),
-        fileOptions: FileOptions(contentType: contentType, upsert: true),
-      );
-      final photoUrl =
-          '${storage.getPublicUrl(path)}?v=${DateTime.now().microsecondsSinceEpoch}';
-
-      if (!mounted) return;
-      setState(() => _avatarUrl = photoUrl);
-      _showMessage('Foto carregada. Toque em salvar para aplicar.');
-    } catch (error) {
-      if (mounted) _showMessage('Não foi possível carregar a foto: $error');
-    } finally {
-      if (mounted) setState(() => _isUploadingPhoto = false);
-    }
-  }
-
-  String _imageExtension(String fileName) {
-    final extension = fileName.contains('.')
-        ? fileName.split('.').last.toLowerCase()
-        : 'jpg';
-    const supportedExtensions = {'jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'};
-    return supportedExtensions.contains(extension) ? extension : 'jpg';
-  }
-
-  String _imageContentType(String extension) {
-    return switch (extension) {
-      'png' => 'image/png',
-      'webp' => 'image/webp',
-      'heic' => 'image/heic',
-      'heif' => 'image/heif',
-      _ => 'image/jpeg',
-    };
-  }
-
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
   }
 }

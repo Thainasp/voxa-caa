@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:voxa/core/config/app_config.dart';
 import 'package:voxa/core/widgets/app_colors.dart';
 import 'package:voxa/core/widgets/custom_text_field.dart';
 import 'package:voxa/features/auth/presentation/widgets/social_login_buttons.dart';
@@ -33,7 +34,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
       await Supabase.instance.client.auth.resetPasswordForEmail(
         email,
-        redirectTo: 'http://localhost:3000',
+        // Android: deep link do app. Web: origem atual da página.
+        redirectTo: AppConfig.authRedirectUrl,
       );
 
       if (!mounted) return;
@@ -50,17 +52,21 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       Navigator.pushReplacementNamed(context, '/login');
     } on AuthException catch (error) {
       if (!mounted) return;
+      final msg = error.message.toLowerCase();
+      final friendly =
+          (error.statusCode == '429' ||
+              msg.contains('security purposes') ||
+              msg.contains('rate limit'))
+          ? 'Aguarde cerca de um minuto antes de solicitar um novo link.'
+          : error.message;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.message),
-          backgroundColor: Colors.redAccent,
-        ),
+        SnackBar(content: Text(friendly), backgroundColor: Colors.redAccent),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Erro ao enviar e-mail.'),
+          content: Text('Erro ao enviar e-mail. Verifique sua conexão.'),
           backgroundColor: Colors.redAccent,
         ),
       );

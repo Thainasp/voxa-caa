@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -19,7 +18,6 @@ class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
-  StreamSubscription<AuthState>? _authSubscription;
   bool _isNavigating = false;
 
   @override
@@ -35,18 +33,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((
-      data,
-    ) {
-      if (data.event == AuthChangeEvent.passwordRecovery && !_isNavigating) {
-        _isNavigating = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            Navigator.pushReplacementNamed(context, '/new-password');
-          }
-        });
-      }
-    });
+    // O evento de recuperação de senha (deep link) é tratado no main.dart.
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final uri = Uri.base;
@@ -74,7 +61,7 @@ class _SplashScreenState extends State<SplashScreen>
     if (!mounted || _isNavigating) return;
 
     if (isAuthenticated) {
-      Navigator.pushReplacementNamed(context, '/home');
+      Navigator.of(context).pushNamedAndRemoveUntil('/home', (route) => false);
     } else {
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
@@ -106,12 +93,13 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<bool> _checkIfUserIsAuthenticated() async {
-    return false;
+    final session = Supabase.instance.client.auth.currentSession;
+    final user = Supabase.instance.client.auth.currentUser;
+    return session != null && user != null;
   }
 
   @override
   void dispose() {
-    _authSubscription?.cancel();
     _controller.dispose();
     super.dispose();
   }

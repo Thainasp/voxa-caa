@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:voxa/core/widgets/app_colors.dart';
+import 'package:voxa/core/state/active_profile.dart';
 import 'package:voxa/core/widgets/crown_icon.dart';
 
 import '../../../core/widgets/curved_content_panel.dart';
@@ -10,6 +11,7 @@ import '../../../core/widgets/home_navigation_bar.dart';
 import '../../../models/user_model.dart';
 import '../../edit/presentation/pages/edit_principal.dart';
 import '../../profile/presentation/settings.dart';
+import 'delete_dependent.dart';
 import 'edit_profile.dart';
 import 'switch_profile.dart';
 
@@ -29,13 +31,29 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     _user = widget.user;
+    ActiveProfile.notifier.addListener(_syncWithActiveProfile);
+  }
+
+  @override
+  void dispose() {
+    ActiveProfile.notifier.removeListener(_syncWithActiveProfile);
+    super.dispose();
+  }
+
+  /// Mantém esta tela alinhada com o perfil ativo quando ele muda em outra
+  /// tela (Trocar de perfil, Editar perfil, Excluir dependente...).
+  void _syncWithActiveProfile() {
+    final active = ActiveProfile.current;
+    if (!mounted || active == null || identical(active, _user)) return;
+    setState(() => _user = active);
   }
 
   void _onBackToHome() {
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop(_user);
     } else {
-      Navigator.of(context).pushReplacementNamed('/home', arguments: _user);
+      Navigator.of(context)
+          .pushNamedAndRemoveUntil('/home', (route) => false, arguments: _user);
     }
   }
 
@@ -56,6 +74,10 @@ class _ProfilePageState extends State<ProfilePage> {
         label: 'Editar Cartões/Tabelas',
       ),
       if (isResp) ...[
+        const _ProfileOptionData(
+          icon: Icons.delete_outline,
+          label: 'Excluir Dependente',
+        ),
         const _ProfileOptionData(
           icon: Icons.settings_outlined,
           label: 'Configuração',
@@ -115,6 +137,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     onPressed: () async {
                       Navigator.of(dialogContext).pop();
                       await Supabase.instance.client.auth.signOut();
+                      ActiveProfile.clear();
                       if (context.mounted) {
                         Navigator.of(
                           context,
@@ -195,6 +218,15 @@ class _ProfilePageState extends State<ProfilePage> {
           setState(() => _user = selectedUser);
         }
         break;
+      case 'Excluir Dependente':
+        // Ao excluir dependente(s) a tela devolve o titular (master).
+        final master = await Navigator.of(context).push<UserModel>(
+          MaterialPageRoute(builder: (_) => const DeleteDependentScreen()),
+        );
+        if (master != null && mounted) {
+          setState(() => _user = master);
+        }
+        break;
       case 'Configuração':
         Navigator.of(context)
             .push(MaterialPageRoute(builder: (_) => const SettingsPage()));
@@ -213,7 +245,8 @@ class _ProfilePageState extends State<ProfilePage> {
         _onBackToHome();
       },
       child: Scaffold(
-        backgroundColor: AppColors.headerGreen,
+        backgroundColor:
+            AppColors.headerGreen,
         appBar: AppBar(
           backgroundColor: AppColors.headerGreen,
           foregroundColor: AppColors.titleColor,
@@ -227,7 +260,7 @@ class _ProfilePageState extends State<ProfilePage> {
             'Perfil',
             style: GoogleFonts.poppins(
               color: AppColors.titleColor,
-              fontSize: 18,
+              fontSize: 20,
               fontWeight: FontWeight.w600,
             ),
           ),

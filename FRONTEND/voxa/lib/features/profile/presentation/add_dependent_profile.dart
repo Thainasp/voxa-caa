@@ -4,9 +4,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voxa/core/widgets/app_colors.dart';
 import 'package:voxa/models/user_model.dart';
 
-import '../../../core/widgets/base_screen_layout.dart';
-import '../../../core/widgets/curved_content_panel.dart';
-import '../../../core/widgets/home_navigation_bar.dart';
+import 'package:voxa/core/widgets/base_screen_layout.dart';
+import 'package:voxa/core/widgets/curved_content_panel.dart';
+import 'package:voxa/core/widgets/home_navigation_bar.dart';
 
 class AddDependentProfileScreen extends StatefulWidget {
   const AddDependentProfileScreen({super.key});

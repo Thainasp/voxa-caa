@@ -98,6 +98,10 @@ class _ProfileAccessScreenState extends State<ProfileAccessScreen> {
           );
         }
 
+        // Guarda esta rota ANTES do await: se alguma tela filha usar o botão
+        // Home (popUntil), esta tela também é removida da pilha.
+        final route = ModalRoute.of(context);
+
         // Abre a tela de perfil e devolve o perfil resultante para a Home
         final result = await Navigator.of(context).push<UserModel>(
           MaterialPageRoute(
@@ -105,9 +109,10 @@ class _ProfileAccessScreenState extends State<ProfileAccessScreen> {
           ),
         );
 
-        if (mounted) {
-          Navigator.of(context).pop(result ?? profileToOpen);
-        }
+        // Se a rota já foi removida (botão Home), NÃO faz outro pop: ele
+        // removeria a própria Home e exibiria a tela que estiver embaixo dela.
+        if (!mounted || route?.isActive != true) return;
+        Navigator.of(context).pop(result ?? profileToOpen);
       }
     } on AuthException catch (e) {
       if (mounted) {
