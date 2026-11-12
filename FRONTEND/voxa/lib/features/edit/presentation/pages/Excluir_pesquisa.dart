@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:voxa/core/widgets/app_colors.dart';
+
 import '../../../../core/widgets/base_screen_layout.dart';
 import '../../../../core/widgets/curved_content_panel.dart';
 import '../../../../core/widgets/home_navigation_bar.dart';
@@ -26,7 +27,7 @@ class _ExcluirPesquisaState extends State<Excluir_pesquisa> {
 
   Future<void> _confirmarExclusao({
     required String itemNome,
-    required VoidCallback onConfirm,
+    required Future<void> Function() onConfirm,
   }) async {
     return showDialog<void>(
       context: context,
@@ -39,7 +40,10 @@ class _ExcluirPesquisaState extends State<Excluir_pesquisa> {
           ),
           insetPadding: const EdgeInsets.symmetric(horizontal: 36.0),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 28.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24.0,
+              vertical: 28.0,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -68,9 +72,9 @@ class _ExcluirPesquisaState extends State<Excluir_pesquisa> {
                   width: double.infinity,
                   height: 46,
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
                       Navigator.of(dialogContext).pop();
-                      onConfirm();
+                      await onConfirm();
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.headerGreen,
@@ -120,32 +124,46 @@ class _ExcluirPesquisaState extends State<Excluir_pesquisa> {
     );
   }
 
-  void _excluirTabua(String key) {
-    setState(() {
-      HomeContentController.boards.removeWhere((b) => b['key'] == key);
-      HomeContentController.cardsByBoard.remove(key);
-    });
+  Future<void> _excluirTabua(String key) async {
+    try {
+      await HomeContentController.deleteBoard(key);
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível excluir a tábua: $error')),
+      );
+    }
   }
 
-  void _excluirCartao(String label) {
-    setState(() {
-      for (final cards in HomeContentController.cardsByBoard.values) {
-        cards.removeWhere((c) => c['label'] == label);
-      }
-    });
+  Future<void> _excluirCartao(Map<String, dynamic> card) async {
+    try {
+      await HomeContentController.deleteCard(card);
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível excluir o cartão: $error')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final query = _searchQuery.toLowerCase();
-    final boards = HomeContentController.boards.where((b) {
+    final editableBoards = HomeContentController.editableBoards;
+    final editableBoardKeys = editableBoards.map((b) => b['key']).toSet();
+    final boards = editableBoards.where((b) {
       return (b['label'] as String).toLowerCase().contains(query);
     }).toList();
 
     final allCards = [];
-    for (final list in HomeContentController.cardsByBoard.values) {
+    for (final entry in HomeContentController.cardsByBoard.entries.where(
+      (entry) => editableBoardKeys.contains(entry.key),
+    )) {
+      final list = entry.value;
       for (final card in list) {
-        if (!allCards.any((c) => c['label'] == card['label'])) {
+        if (!allCards.any((c) => c['id'] == card['id'])) {
           allCards.add(card);
         }
       }
@@ -181,7 +199,11 @@ class _ExcluirPesquisaState extends State<Excluir_pesquisa> {
                     fontWeight: FontWeight.w300,
                     color: Colors.black38,
                   ),
-                  prefixIcon: const Icon(Icons.search, size: 20, color: Colors.black45),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    size: 20,
+                    color: Colors.black45,
+                  ),
                   suffixIcon: _searchQuery.isEmpty
                       ? null
                       : IconButton(
@@ -214,7 +236,11 @@ class _ExcluirPesquisaState extends State<Excluir_pesquisa> {
                 ),
               ),
             ),
-            const Divider(color: AppColors.headerGreen, thickness: 1, height: 1),
+            const Divider(
+              color: AppColors.headerGreen,
+              thickness: 1,
+              height: 1,
+            ),
             const SizedBox(height: 16),
 
             LayoutBuilder(
@@ -262,7 +288,11 @@ class _ExcluirPesquisaState extends State<Excluir_pesquisa> {
                 ),
               ),
             ),
-            const Divider(color: AppColors.headerGreen, thickness: 1, height: 1),
+            const Divider(
+              color: AppColors.headerGreen,
+              thickness: 1,
+              height: 1,
+            ),
             const SizedBox(height: 16),
 
             LayoutBuilder(
@@ -288,7 +318,8 @@ class _ExcluirPesquisaState extends State<Excluir_pesquisa> {
                       onTap: () {
                         _confirmarExclusao(
                           itemNome: card['label'] ?? '',
-                          onConfirm: () => _excluirCartao(card['label']),
+                          onConfirm: () =>
+                              _excluirCartao(Map<String, dynamic>.from(card)),
                         );
                       },
                     );
@@ -340,7 +371,11 @@ class _ExcluirItemTile extends StatelessWidget {
                         ? Image.network(imagePath!, fit: BoxFit.contain)
                         : Image.asset(imagePath!, fit: BoxFit.contain),
                   )
-                : Icon(icon ?? Icons.image_outlined, color: Colors.white, size: 36),
+                : Icon(
+                    icon ?? Icons.image_outlined,
+                    color: Colors.white,
+                    size: 36,
+                  ),
           ),
           const SizedBox(height: 6),
           Text(

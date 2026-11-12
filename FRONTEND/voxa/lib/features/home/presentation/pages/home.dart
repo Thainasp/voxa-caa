@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voxa/models/user_model.dart';
 import 'package:voxa/core/widgets/app_colors.dart';
+
 import '../../../../core/widgets/base_screen_layout.dart';
 import '../../../../core/widgets/cartao_padrao.dart';
 import '../../../profile/presentation/profile_access.dart';
@@ -12,7 +13,7 @@ import '../widgets/category_navigation.dart';
 class HomePage extends StatefulWidget {
   final UserModel? user;
 
-  const HomePage({Key? key, this.user}) : super(key: key);
+  const HomePage({super.key, this.user});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -32,53 +33,50 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _initActiveProfile() async {
+    setState(() => _isLoadingContent = true);
+    try {
+      await _loadContentForActiveProfile(_activeUser);
+    } catch (error) {
+      _showContentError(error);
+    } finally {
+      if (mounted) setState(() => _isLoadingContent = false);
+    }
+  }
+
+  Future<void> _loadContentForActiveProfile(UserModel? requestedProfile) async {
     final client = Supabase.instance.client;
     final authUser = client.auth.currentUser;
-    if (authUser == null) return;
-
-    if (_activeUser == null) {
-      setState(() => _isLoadingContent = true);
-      try {
-        final profileData = await client
-            .from('perfil')
-            .select()
-            .eq('usuario_id', authUser.id)
-            .eq('is_responsavel', true)
-            .maybeSingle();
-
-        if (profileData != null) {
-          _activeUser = UserModel(
-            id: profileData['id'],
-            name: profileData['nome'],
-            email: authUser.email ?? '',
-            avatarUrl: profileData['avatar_url'],
-            isResponsavel: true,
-          );
-        } else {
-          _activeUser = UserModel(
-            id: authUser.id,
-            name: 'Titular',
-            email: authUser.email ?? '',
-            isResponsavel: true,
-          );
-        }
-      } catch (_) {
-        _activeUser = UserModel(
-          id: authUser.id,
-          name: 'Titular',
-          email: authUser.email ?? '',
-          isResponsavel: true,
-        );
-      }
+    if (authUser == null) {
+      throw const AuthException(
+        'Entre na sua conta para carregar suas tábuas e cartões.',
+      );
     }
 
-    if (_activeUser != null) {
-      await HomeContentController.loadContentForProfile(_activeUser!.id);
-    }
+    final metadata = authUser.userMetadata ?? const <String, dynamic>{};
+    final fallbackName =
+        requestedProfile?.name ??
+        (metadata['display_name'] ??
+                metadata['nome'] ??
+                metadata['name'] ??
+                authUser.email?.split('@').first ??
+                'Titular')
+            .toString();
+    _activeUser = await HomeContentController.resolveActiveProfile(
+      authUserId: authUser.id,
+      email: authUser.email ?? '',
+      requestedProfile: requestedProfile,
+      fallbackName: fallbackName,
+      avatarUrl:
+          requestedProfile?.avatarUrl ?? metadata['avatar_url'] as String?,
+    );
+    await HomeContentController.loadContentForProfile(_activeUser!.id);
+  }
 
-    if (mounted) {
-      setState(() => _isLoadingContent = false);
-    }
+  void _showContentError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Falha ao carregar pranchas e cartões: $error')),
+    );
   }
 
   void _showProfileSwitchNotification(String profileName) {
@@ -93,7 +91,11 @@ class _HomePageState extends State<HomePage> {
         duration: const Duration(seconds: 3),
         content: Row(
           children: [
-            const Icon(Icons.swap_horiz, color: AppColors.headerGreen, size: 24),
+            const Icon(
+              Icons.swap_horiz,
+              color: AppColors.headerGreen,
+              size: 24,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -129,7 +131,11 @@ class _HomePageState extends State<HomePage> {
         _isLoadingContent = true;
       });
 
-      await HomeContentController.loadContentForProfile(selectedUser.id);
+      try {
+        await _loadContentForActiveProfile(selectedUser);
+      } catch (error) {
+        _showContentError(error);
+      }
 
       if (mounted) {
         setState(() => _isLoadingContent = false);
@@ -142,8 +148,9 @@ class _HomePageState extends State<HomePage> {
 
   void _falarFrase() {
     if (_fraseSelecionada.isEmpty) return;
-    String fraseCompleta =
-        _fraseSelecionada.map((item) => item['label'] ?? '').join(' ');
+    String fraseCompleta = _fraseSelecionada
+        .map((item) => item['label'] ?? '')
+        .join(' ');
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Falando: "$fraseCompleta"'),
@@ -160,6 +167,27 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  void _showArasaacCredits() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Créditos dos pictogramas'),
+        content: const Text(
+          'Pictogramas criados por Sergio Palao para ARASAAC '
+          '(arasaac.org), propriedade do Governo de Aragão. '
+          'Licença Creative Commons BY-NC-SA '
+          '(Atribuição–NãoComercial–CompartilhaIgual).',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _voltarInicio() {
     setState(() {
       _categoriaAtual = 'Principal';
@@ -167,12 +195,26 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  List<Map<String, dynamic>> get _visibleCategories {
+    final allBoards = HomeContentController.boardsWithUserCreatedFirst;
+    return allBoards
+        .where(
+          (board) =>
+              board['key'] != 'Principal' &&
+              (board['catalogoArasaac'] == true || board['parentKey'] == null),
+        )
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isCompactAppBar = screenWidth < 480;
+    final isVeryNarrowAppBar = screenWidth < 360;
     final simbolosAtuais =
         HomeContentController.cardsByBoard[_categoriaAtual] ??
-            HomeContentController.cardsByBoard['Principal'] ??
-            [];
+        HomeContentController.cardsByBoard['Principal'] ??
+        [];
 
     return BaseScreenLayout(
       appBar: AppBar(
@@ -182,21 +224,37 @@ class _HomePageState extends State<HomePage> {
         toolbarHeight: 64,
         automaticallyImplyLeading: false,
         titleSpacing: 0,
-        leadingWidth: 104,
-        leading: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.person_outline, size: 26),
-              tooltip: 'Perfil',
-              onPressed: _openProfile,
-            ),
-            IconButton(
-              icon: const Icon(Icons.home_outlined, size: 28),
-              tooltip: 'Início',
-              onPressed: _voltarInicio,
-            ),
-          ],
-        ),
+        leadingWidth: isVeryNarrowAppBar ? 56 : 104,
+        leading: isVeryNarrowAppBar
+            ? PopupMenuButton<String>(
+                tooltip: 'Navegação',
+                icon: const Icon(Icons.menu),
+                onSelected: (action) {
+                  if (action == 'profile') {
+                    _openProfile();
+                  } else {
+                    _voltarInicio();
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: 'profile', child: Text('Perfil')),
+                  PopupMenuItem(value: 'home', child: Text('Início')),
+                ],
+              )
+            : Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.person_outline, size: 26),
+                    tooltip: 'Perfil',
+                    onPressed: _openProfile,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.home_outlined, size: 28),
+                    tooltip: 'Início',
+                    onPressed: _voltarInicio,
+                  ),
+                ],
+              ),
         title: Container(
           height: 42,
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -235,18 +293,51 @@ class _HomePageState extends State<HomePage> {
                   },
                 ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.play_circle_outline, size: 26),
-            tooltip: 'Falar frase',
-            onPressed: _falarFrase,
-          ),
-          IconButton(
-            icon: const Icon(Icons.backspace_outlined, size: 24),
-            tooltip: 'Apagar',
-            onPressed: _apagarUltimaPalavra,
-          ),
-        ],
+        actions: isCompactAppBar
+            ? [
+                PopupMenuButton<String>(
+                  tooltip: 'Mais opções',
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (action) {
+                    switch (action) {
+                      case 'credits':
+                        _showArasaacCredits();
+                      case 'speak':
+                        _falarFrase();
+                      case 'delete':
+                        _apagarUltimaPalavra();
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'credits',
+                      child: Text('Créditos dos pictogramas'),
+                    ),
+                    PopupMenuItem(value: 'speak', child: Text('Falar frase')),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Apagar última palavra'),
+                    ),
+                  ],
+                ),
+              ]
+            : [
+                IconButton(
+                  icon: const Icon(Icons.info_outline, size: 24),
+                  tooltip: 'Créditos dos pictogramas',
+                  onPressed: _showArasaacCredits,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.play_circle_outline, size: 26),
+                  tooltip: 'Falar frase',
+                  onPressed: _falarFrase,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.backspace_outlined, size: 24),
+                  tooltip: 'Apagar',
+                  onPressed: _apagarUltimaPalavra,
+                ),
+              ],
       ),
       body: _isLoadingContent
           ? const Center(
@@ -259,8 +350,8 @@ class _HomePageState extends State<HomePage> {
                 final crossAxisCount = constraints.maxWidth < 480
                     ? 4
                     : isLandscape && constraints.maxWidth >= 700
-                        ? 8
-                        : 6;
+                    ? 8
+                    : 6;
 
                 return Column(
                   children: [
@@ -268,8 +359,9 @@ class _HomePageState extends State<HomePage> {
                       child: Container(
                         decoration: const BoxDecoration(
                           color: AppColors.contentBackground,
-                          borderRadius:
-                              BorderRadius.vertical(top: Radius.circular(30)),
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(30),
+                          ),
                         ),
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                         child: Column(
@@ -279,11 +371,11 @@ class _HomePageState extends State<HomePage> {
                                 padding: const EdgeInsets.all(4.0),
                                 gridDelegate:
                                     SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: crossAxisCount,
-                                  crossAxisSpacing: 10,
-                                  mainAxisSpacing: 10,
-                                  childAspectRatio: 1.0,
-                                ),
+                                      crossAxisCount: crossAxisCount,
+                                      crossAxisSpacing: 10,
+                                      mainAxisSpacing: 10,
+                                      childAspectRatio: 1.0,
+                                    ),
                                 itemCount: simbolosAtuais.length,
                                 itemBuilder: (context, index) {
                                   final symbol = simbolosAtuais[index];
@@ -303,11 +395,9 @@ class _HomePageState extends State<HomePage> {
                             ),
                             const SizedBox(height: 8),
                             CategoryNavigation(
-                              categories: List.from(
-                                HomeContentController.boards,
-                              ),
+                              categories: _visibleCategories,
                               selectedKey: _categoriaAtual,
-                              height: isLandscape ? 64 : 96,
+                              height: isLandscape ? 82 : 96,
                               iconSize: isLandscape ? 36 : 52,
                               onCategorySelected: (category) {
                                 setState(() => _categoriaAtual = category);

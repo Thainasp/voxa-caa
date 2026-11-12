@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -6,6 +8,7 @@ import 'package:voxa/core/widgets/app_colors.dart';
 import '../../../../core/widgets/base_screen_layout.dart';
 import '../../../../core/widgets/curved_content_panel.dart';
 import '../../../../core/widgets/home_navigation_bar.dart';
+import '../widgets/device_image_picker.dart';
 
 class EditTabuaPage extends StatefulWidget {
   final Map<String, dynamic> board;
@@ -21,14 +24,27 @@ class _EditTabuaPageState extends State<EditTabuaPage> {
   late final TextEditingController _nomeController;
   late final TextEditingController _imagemController;
   late final TextEditingController _audioController;
+  String? _imageStoragePath;
+  String? _previewImagePath;
+  String? _originalImagePath;
+  Uint8List? _imageBytes;
+  String? _imageContentType;
+  bool _imageChanged = false;
 
   @override
   void initState() {
     super.initState();
     _nomeController = TextEditingController(text: widget.board['label'] ?? '');
+    _originalImagePath = widget.board['imagePath'] as String?;
+    _previewImagePath = _originalImagePath;
     _imagemController = TextEditingController(
-      text: widget.board['imagePath'] ?? '',
+      text:
+          widget.board['imageStoragePath'] != null ||
+              _originalImagePath?.startsWith('assets/') == true
+          ? ''
+          : _originalImagePath ?? '',
     );
+    _imageStoragePath = widget.board['imageStoragePath'] as String?;
     _audioController = TextEditingController(
       text: widget.board['audioPath'] ?? '',
     );
@@ -48,15 +64,53 @@ class _EditTabuaPageState extends State<EditTabuaPage> {
     final updatedBoard = {
       ...widget.board,
       'label': _nomeController.text.trim(),
-      'imagePath': _imagemController.text.trim().isEmpty
-          ? null
-          : _imagemController.text.trim(),
+      'imagePath': _imageChanged
+          ? (_imageBytes != null || _imagemController.text.trim().isEmpty
+                ? null
+                : _imagemController.text.trim())
+          : _originalImagePath,
+      'imageStoragePath': _imageChanged
+          ? _imageStoragePath
+          : widget.board['imageStoragePath'],
+      '_imageBytes': _imageBytes,
+      '_imageContentType': _imageContentType,
       'audioPath': _audioController.text.trim().isEmpty
           ? null
           : _audioController.text.trim(),
     };
 
     Navigator.of(context).pop(updatedBoard);
+  }
+
+  Future<void> _selecionarImagem() async {
+    try {
+      final selection = await pickDeviceImage(context);
+      if (selection == null || !mounted) return;
+      setState(() {
+        _imageBytes = Uint8List.fromList(selection.bytes);
+        _imageContentType = selection.contentType;
+        _imageStoragePath = null;
+        _previewImagePath = null;
+        _imageChanged = true;
+        _imagemController.clear();
+      });
+    } on Exception catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível escolher a imagem: $error')),
+      );
+    }
+  }
+
+  String? _validateImageUrl(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    final uri = Uri.tryParse(value.trim());
+    if (uri == null ||
+        !uri.hasAuthority ||
+        (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return 'Informe uma URL de imagem HTTP ou HTTPS válida';
+    }
+    return null;
   }
 
   Widget _buildFieldTitle(String label) {
@@ -77,10 +131,12 @@ class _EditTabuaPageState extends State<EditTabuaPage> {
     required TextEditingController controller,
     String? hintText,
     String? Function(String?)? validator,
+    ValueChanged<String>? onChanged,
   }) {
     return TextFormField(
       controller: controller,
       validator: validator,
+      onChanged: onChanged,
       style: GoogleFonts.poppins(fontSize: 14, color: AppColors.textColor),
       decoration: InputDecoration(
         hintText: hintText,
@@ -122,8 +178,67 @@ class _EditTabuaPageState extends State<EditTabuaPage> {
               _buildFieldTitle('Imagem'),
               _buildPillTextField(
                 controller: _imagemController,
-                hintText: 'JPG/JPEG',
+                hintText: 'URL da imagem (opcional)',
+                validator: _validateImageUrl,
+                onChanged: (value) {
+                  setState(() => _imageChanged = true);
+                  if (value.trim().isNotEmpty) {
+                    setState(() {
+                      _imageBytes = null;
+                      _imageContentType = null;
+                      _imageStoragePath = null;
+                      _previewImagePath = value.trim();
+                    });
+                  }
+                },
               ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: _selecionarImagem,
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: const Text('Escolher do celular ou usar a câmera'),
+                ),
+              ),
+              if (_imageBytes != null) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 120,
+                  child: Image.memory(_imageBytes!, fit: BoxFit.contain),
+                ),
+              ] else if (_previewImagePath != null &&
+                  _previewImagePath!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 120,
+                  child: _previewImagePath!.startsWith('http')
+                      ? Image.network(
+                          _previewImagePath!,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) =>
+                              const Icon(Icons.broken_image_outlined),
+                        )
+                      : Image.asset(
+                          _previewImagePath!,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) =>
+                              const Icon(Icons.broken_image_outlined),
+                        ),
+                ),
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _previewImagePath = null;
+                      _imageStoragePath = null;
+                      _imageChanged = true;
+                      _imagemController.clear();
+                    });
+                  },
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Remover imagem'),
+                ),
+              ],
               const SizedBox(height: 18),
 
               _buildFieldTitle('Audio'),

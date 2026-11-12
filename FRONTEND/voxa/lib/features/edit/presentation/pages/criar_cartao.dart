@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -7,6 +9,7 @@ import '../../../../core/widgets/base_screen_layout.dart';
 import '../../../../core/widgets/curved_content_panel.dart';
 import '../../../../core/widgets/home_navigation_bar.dart';
 import '../../../home/presentation/controllers/home_content_controller.dart';
+import '../widgets/device_image_picker.dart';
 
 class CriarCartaoPage extends StatefulWidget {
   const CriarCartaoPage({super.key});
@@ -21,12 +24,16 @@ class _CriarCartaoPageState extends State<CriarCartaoPage> {
   final _imagemController = TextEditingController();
   final _audioController = TextEditingController();
   String? _selectedBoardKey;
+  Uint8List? _imageBytes;
+  String? _imageContentType;
+  bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    if (HomeContentController.boards.isNotEmpty) {
-      _selectedBoardKey = HomeContentController.boards.first['key'] as String;
+    if (HomeContentController.editableBoards.isNotEmpty) {
+      _selectedBoardKey =
+          HomeContentController.editableBoards.first['key'] as String;
     }
   }
 
@@ -38,22 +45,54 @@ class _CriarCartaoPageState extends State<CriarCartaoPage> {
     super.dispose();
   }
 
-  void _salvar() {
+  Future<void> _salvar() async {
     if (!_formKey.currentState!.validate() || _selectedBoardKey == null) return;
 
+    setState(() => _isSaving = true);
     final newCard = {
       'label': _nomeController.text.trim(),
       'color': AppColors.categoryBlue,
       'icon': Icons.image_outlined,
-      'imagePath': _imagemController.text.trim().isEmpty
+      'imagePath': _imageBytes != null || _imagemController.text.trim().isEmpty
           ? null
           : _imagemController.text.trim(),
       'audioPath': _audioController.text.trim().isEmpty
           ? null
           : _audioController.text.trim(),
+      '_imageBytes': _imageBytes,
+      '_imageContentType': _imageContentType,
     };
 
+    if (!mounted) return;
     Navigator.of(context).pop({'card': newCard, 'boardKey': _selectedBoardKey});
+  }
+
+  Future<void> _selecionarImagem() async {
+    try {
+      final selection = await pickDeviceImage(context);
+      if (selection == null || !mounted) return;
+      setState(() {
+        _imageBytes = Uint8List.fromList(selection.bytes);
+        _imageContentType = selection.contentType;
+        _imagemController.clear();
+      });
+    } on Exception catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível escolher a imagem: $error')),
+      );
+    }
+  }
+
+  String? _validateImageUrl(String? value) {
+    if (value == null || value.trim().isEmpty) return null;
+    final uri = Uri.tryParse(value.trim());
+    if (uri == null ||
+        !uri.hasAuthority ||
+        (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return 'Informe uma URL de imagem HTTP ou HTTPS válida';
+    }
+    return null;
   }
 
   Widget _buildFieldTitle(String label) {
@@ -74,10 +113,12 @@ class _CriarCartaoPageState extends State<CriarCartaoPage> {
     required TextEditingController controller,
     String? hintText,
     String? Function(String?)? validator,
+    ValueChanged<String>? onChanged,
   }) {
     return TextFormField(
       controller: controller,
       validator: validator,
+      onChanged: onChanged,
       style: GoogleFonts.poppins(fontSize: 14, color: AppColors.textColor),
       decoration: InputDecoration(
         hintText: hintText,
@@ -119,8 +160,33 @@ class _CriarCartaoPageState extends State<CriarCartaoPage> {
               _buildFieldTitle('Imagem'),
               _buildPillTextField(
                 controller: _imagemController,
-                hintText: 'JPG/JPEG',
+                hintText: 'URL da imagem (opcional)',
+                validator: _validateImageUrl,
+                onChanged: (_) {
+                  if (_imageBytes != null) {
+                    setState(() {
+                      _imageBytes = null;
+                      _imageContentType = null;
+                    });
+                  }
+                },
               ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: _selecionarImagem,
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  label: const Text('Escolher do celular ou usar a câmera'),
+                ),
+              ),
+              if (_imageBytes != null) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 120,
+                  child: Image.memory(_imageBytes!, fit: BoxFit.contain),
+                ),
+              ],
               const SizedBox(height: 18),
 
               _buildFieldTitle('Audio'),
@@ -158,7 +224,7 @@ class _CriarCartaoPageState extends State<CriarCartaoPage> {
                     borderSide: BorderSide.none,
                   ),
                 ),
-                items: HomeContentController.boards
+                items: HomeContentController.editableBoards
                     .map(
                       (b) => DropdownMenuItem<String>(
                         value: b['key'] as String,
@@ -176,7 +242,7 @@ class _CriarCartaoPageState extends State<CriarCartaoPage> {
                   width: 140,
                   height: 44,
                   child: ElevatedButton(
-                    onPressed: _salvar,
+                    onPressed: _isSaving ? null : _salvar,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.headerGreen,
                       elevation: 0,
@@ -184,14 +250,19 @@ class _CriarCartaoPageState extends State<CriarCartaoPage> {
                         borderRadius: BorderRadius.circular(24),
                       ),
                     ),
-                    child: Text(
-                      'Salvar',
-                      style: GoogleFonts.poppins(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white,
-                      ),
-                    ),
+                    child: _isSaving
+                        ? const SizedBox.square(
+                            dimension: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(
+                            'Salvar',
+                            style: GoogleFonts.poppins(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white,
+                            ),
+                          ),
                   ),
                 ),
               ),

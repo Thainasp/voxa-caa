@@ -104,6 +104,30 @@ void main() {
     expect(find.bySemanticsLabel('Foto de perfil genérica'), findsOneWidget);
   });
 
+  testWidgets('barra da home cabe em telas estreitas', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomePage(
+          user: UserModel(
+            id: 'a1b2c3d4-e5f6-7890-1234-56789abcdef0',
+            name: 'Maria da Silva',
+            email: 'maria@voxa.com',
+            isResponsavel: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('perfil não exibe a opção de editar favoritos', (
     WidgetTester tester,
   ) async {
