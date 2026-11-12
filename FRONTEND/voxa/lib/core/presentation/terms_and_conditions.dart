@@ -3,14 +3,26 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:voxa/core/widgets/app_colors.dart';
 import 'package:voxa/core/widgets/home_navigation_bar.dart';
 
+/// Tela de Termos e Condições.
+///
+/// Existem dois modos de uso:
+/// - [showHomeNavigation] = false (padrão, rota '/terms', aberta pelo
+///   cadastro): sem botão Home, pois a pessoa ainda não está logada. No lugar
+///   aparece o botão "Li e aceito", que devolve `true` para a tela de cadastro.
+/// - [showHomeNavigation] = true (aberta pelas Configurações): mostra o botão
+///   Home, pois a pessoa já está logada.
 class TermsAndConditionsScreen extends StatelessWidget {
-  const TermsAndConditionsScreen({super.key});
+  final bool showHomeNavigation;
+
+  const TermsAndConditionsScreen({super.key, this.showHomeNavigation = false});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.contentBackground,
-      bottomNavigationBar: const HomeNavigationBar(),
+      bottomNavigationBar: showHomeNavigation
+          ? const HomeNavigationBar()
+          : _AcceptBar(onAccept: () => Navigator.of(context).pop(true)),
       body: Column(
         children: [
           Container(
@@ -26,7 +38,8 @@ class TermsAndConditionsScreen extends StatelessWidget {
               children: [
                 IconButton(
                   icon: const Icon(Icons.arrow_back, color: Colors.black87),
-                  onPressed: () => Navigator.pop(context),
+                  tooltip: 'Voltar',
+                  onPressed: () => Navigator.of(context).maybePop(),
                 ),
                 Expanded(
                   child: Text(
@@ -43,7 +56,6 @@ class TermsAndConditionsScreen extends StatelessWidget {
               ],
             ),
           ),
-
           Expanded(
             child: SingleChildScrollView(
               child: Container(
@@ -73,6 +85,8 @@ class TermsAndConditionsScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 14),
+                    // TODO: substituir pelo texto oficial dos Termos de Uso e
+                    // da Política de Privacidade do Voxa.
                     Text(
                       'Lorem ipsum dolor sit amet. Et odio officia aut voluptate internos est '
                       'omnis vitae ut architecto sunt non tenetur fuga ut provident vero. '
@@ -95,21 +109,50 @@ class TermsAndConditionsScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    Text(
-                      'Read the terms and conditions in more detail at\nwww.finwiseapp.de',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: Colors.blue,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
                   ],
                 ),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Barra inferior exibida quando os Termos são abertos pelo cadastro.
+class _AcceptBar extends StatelessWidget {
+  final VoidCallback onAccept;
+
+  const _AcceptBar({required this.onAccept});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+        child: SizedBox(
+          height: 48,
+          child: ElevatedButton(
+            onPressed: onAccept,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.headerGreen,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+            ),
+            child: Text(
+              'Li e aceito',
+              style: GoogleFonts.poppins(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

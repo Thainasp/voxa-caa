@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:voxa/core/navigation/route_observer.dart';
+import 'package:voxa/core/state/active_profile.dart';
 import 'package:voxa/models/user_model.dart';
 import 'package:voxa/core/widgets/app_colors.dart';
 
 import '../../../../core/widgets/base_screen_layout.dart';
-import '../../../../core/widgets/cartao_padrao.dart';
+// O arquivo se chama "Cartao_padrao.dart" (com C maiúsculo). Em Linux/CI o
+// nome precisa ser idêntico.
+import '../../../../core/widgets/Cartao_padrao.dart';
 import '../../../profile/presentation/profile_access.dart';
 import '../controllers/home_content_controller.dart';
 import '../widgets/category_navigation.dart';
@@ -19,18 +24,82 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with RouteAware {
+  /// Quem está com a orientação horizontal travada no momento. Evita que uma
+  /// Home antiga, ao ser descartada, force a vertical por cima de uma Home nova.
+  static _HomePageState? _landscapeOwner;
+
   final List _fraseSelecionada = [];
   String _categoriaAtual = 'Principal';
   late UserModel? _activeUser;
   bool _isLoadingContent = false;
+  String? _pendingSwitchNotification;
 
   @override
   void initState() {
     super.initState();
-    _activeUser = widget.user;
+    _activeUser = widget.user ?? ActiveProfile.current;
+    ActiveProfile.notifier.addListener(_onActiveProfileChanged);
     _initActiveProfile();
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute<dynamic>) {
+      routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    ActiveProfile.notifier.removeListener(_onActiveProfileChanged);
+    _lockPortrait();
+    super.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Orientação: horizontal SOMENTE enquanto a Home está visível.
+  // ---------------------------------------------------------------------------
+
+  void _lockLandscape() {
+    _landscapeOwner = this;
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+
+  void _lockPortrait() {
+    if (_landscapeOwner != null && _landscapeOwner != this) return;
+    _landscapeOwner = null;
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  }
+
+  @override
+  void didPush() => _lockLandscape(); // Home apareceu
+
+  @override
+  void didPopNext() {
+    // Voltou para a Home (outra tela foi fechada)
+    _lockLandscape();
+    _showPendingNotification();
+  }
+
+  @override
+  void didPushNext() => _lockPortrait(); // outra tela abriu por cima
+
+  @override
+  void didPop() => _lockPortrait();
+
+  // ---------------------------------------------------------------------------
+  // Perfil ativo
+  // ---------------------------------------------------------------------------
 
   Future<void> _initActiveProfile() async {
     setState(() => _isLoadingContent = true);
@@ -79,6 +148,47 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// Chamado quando outra tela (Trocar de perfil, Editar perfil, Excluir
+  /// dependente...) altera o perfil ativo.
+  Future<void> _onActiveProfileChanged() async {
+    final selected = ActiveProfile.current;
+    if (!mounted || selected == null || identical(selected, _activeUser)) {
+      return;
+    }
+
+    final isDifferentUser = _activeUser?.id != selected.id;
+
+    if (!isDifferentUser) {
+      // Mesmo perfil, só dados novos (nome/foto): atualiza sem recarregar.
+      setState(() => _activeUser = selected);
+      return;
+    }
+
+    setState(() {
+      _activeUser = selected;
+      _categoriaAtual = 'Principal';
+      _fraseSelecionada.clear();
+      _isLoadingContent = true;
+    });
+
+    await HomeContentController.loadContentForProfile(selected.id);
+
+    if (!mounted) return;
+    setState(() => _isLoadingContent = false);
+
+    _pendingSwitchNotification = selected.name;
+    if (ModalRoute.of(context)?.isCurrent ?? false) {
+      _showPendingNotification();
+    }
+  }
+
+  void _showPendingNotification() {
+    final name = _pendingSwitchNotification;
+    if (name == null || !mounted) return;
+    _pendingSwitchNotification = null;
+    _showProfileSwitchNotification(name);
+  }
+
   void _showProfileSwitchNotification(String profileName) {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -114,36 +224,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _openProfile() async {
-    final oldProfileId = _activeUser?.id;
-    final selectedUser = await Navigator.of(context).push<UserModel>(
+    // A troca/edição de perfil chega até aqui pelo ActiveProfile, não mais
+    // pelo resultado do Navigator (que se perdia com o botão Home).
+    await Navigator.of(context).push<UserModel>(
       MaterialPageRoute(
         builder: (_) => ProfileAccessScreen(currentUser: _activeUser),
       ),
     );
-
-    if (selectedUser != null && mounted) {
-      final isDifferentUser = oldProfileId != selectedUser.id;
-
-      setState(() {
-        _activeUser = selectedUser;
-        _categoriaAtual = 'Principal';
-        _fraseSelecionada.clear();
-        _isLoadingContent = true;
-      });
-
-      try {
-        await _loadContentForActiveProfile(selectedUser);
-      } catch (error) {
-        _showContentError(error);
-      }
-
-      if (mounted) {
-        setState(() => _isLoadingContent = false);
-        if (isDifferentUser) {
-          _showProfileSwitchNotification(selectedUser.name);
-        }
-      }
-    }
   }
 
   void _falarFrase() {

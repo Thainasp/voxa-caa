@@ -1,6 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voxa/core/widgets/custom_text_field.dart';
 import 'package:voxa/features/auth/presentation/widgets/social_login_buttons.dart';
@@ -69,7 +70,8 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Autenticação com Supabase Auth
+      // 1) Autenticação com Supabase Auth. Só aqui "e-mail ou senha inválidos"
+      //    faz sentido como mensagem.
       final response = await Supabase.instance.client.auth.signInWithPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
@@ -80,48 +82,112 @@ class _LoginScreenState extends State<LoginScreen> {
         throw const AuthException('Falha ao autenticar.');
       }
 
-      // Busca dados cadastrais da tabela pública usuario
+      // 2) Dados cadastrais. Se falhar, o login continua valendo (a pessoa já
+      //    está autenticada) e usamos os dados do próprio Auth.
+      final userProfile = await _loadUserProfile(authUser);
+
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/home', arguments: userProfile);
+    } on AuthException catch (e) {
+      _showError(
+        _isNetworkError(e)
+            ? 'Sem conexão com o servidor. Verifique sua internet e tente novamente.'
+            : _friendlyAuthMessage(e),
+      );
+    } catch (e) {
+      _showError(
+        _isNetworkError(e)
+            ? 'Sem conexão com o servidor. Verifique sua internet e tente novamente.'
+            : 'Não foi possível entrar agora. Tente novamente em instantes.',
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Monta o perfil do titular. Nunca lança: em caso de erro (rede, RLS,
+  /// linha inexistente em `usuario`) devolve os dados do Auth.
+  Future<UserModel> _loadUserProfile(User authUser) async {
+    final meta = authUser.userMetadata;
+    final metaAvatar = meta?['avatar_url'] as String?;
+
+    final fallback = UserModel(
+      id: authUser.id,
+      name: (meta?['display_name'] ??
+              meta?['nome'] ??
+              authUser.email?.split('@').first ??
+              'Usuário')
+          .toString(),
+      email: authUser.email ?? '',
+      avatarUrl: metaAvatar,
+      isResponsavel: true,
+    );
+
+    try {
       final userData = await Supabase.instance.client
           .from('usuario')
           .select()
           .eq('id', authUser.id)
           .maybeSingle();
 
-      final userProfile = userData != null
-          ? UserModel.fromMap({
-              ...userData,
-              'avatar_url': authUser.userMetadata?['avatar_url'],
-            })
-          : UserModel(
-              id: authUser.id,
-              name: authUser.email?.split('@').first ?? 'Usuário',
-              email: authUser.email ?? '',
-              avatarUrl: authUser.userMetadata?['avatar_url'] as String?,
-            );
+      if (userData == null) return fallback;
 
-      await SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-
-      if (!mounted) return;
-      Navigator.pushReplacementNamed(context, '/home', arguments: userProfile);
-    } on AuthException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message), backgroundColor: Colors.redAccent),
+      final fromDb = UserModel.fromMap({...userData});
+      return fromDb.copyWith(
+        name: fromDb.name.isEmpty ? fallback.name : fromDb.name,
+        email: fromDb.email.isEmpty ? fallback.email : fromDb.email,
+        // Prefere a foto salva na tabela; o metadata só entra como reserva.
+        avatarUrl: fromDb.avatarUrl ?? metaAvatar,
+        // Quem faz login com e-mail e senha é sempre o responsável.
+        isResponsavel: true,
       );
     } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('E-mail ou senha inválidos.'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      return fallback;
     }
+  }
+
+  String _friendlyAuthMessage(AuthException e) {
+    final msg = e.message.toLowerCase();
+
+    if (msg.contains('invalid login credentials') ||
+        msg.contains('invalid credentials')) {
+      return 'E-mail ou senha inválidos.';
+    }
+    if (msg.contains('email not confirmed')) {
+      return 'Confirme seu e-mail antes de entrar. Verifique sua caixa de entrada.';
+    }
+    if (e.statusCode == '429' ||
+        msg.contains('too many requests') ||
+        msg.contains('rate limit')) {
+      return 'Muitas tentativas. Aguarde alguns instantes e tente novamente.';
+    }
+    if (msg.contains('banned')) {
+      return 'Esta conta está bloqueada. Entre em contato com o suporte.';
+    }
+    return 'Não foi possível entrar: ${e.message}';
+  }
+
+  /// Identifica falhas de conexão (sem internet, DNS, timeout, bloqueio).
+  bool _isNetworkError(Object error) {
+    if (error is TimeoutException) return true;
+    final text = '${error.runtimeType} $error'.toLowerCase();
+    return text.contains('socketexception') ||
+        text.contains('clientexception') ||
+        text.contains('retryable') ||
+        text.contains('failed host lookup') ||
+        text.contains('failed to fetch') ||
+        text.contains('network is unreachable') ||
+        text.contains('connection refused') ||
+        text.contains('connection closed') ||
+        text.contains('timed out') ||
+        text.contains('timeout');
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+    );
   }
 
   @override
