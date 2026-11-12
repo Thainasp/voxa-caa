@@ -6,9 +6,9 @@ import 'package:voxa/core/navigation/route_observer.dart';
 import 'package:voxa/core/state/active_profile.dart';
 import 'package:voxa/models/user_model.dart';
 import 'package:voxa/core/widgets/app_colors.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+
 import '../../../../core/widgets/base_screen_layout.dart';
-// O arquivo se chama "Cartao_padrao.dart" (com C maiúsculo). Em Linux/CI o
-// nome precisa ser idêntico.
 import '../../../../core/widgets/Cartao_padrao.dart';
 import '../../../profile/presentation/profile_access.dart';
 import '../controllers/home_content_controller.dart';
@@ -221,17 +221,13 @@ class _HomePageState extends State<HomePage> with RouteAware {
     );
   }
 
-  void _falarFrase() {
-    if (_fraseSelecionada.isEmpty) return;
-    String fraseCompleta =
-        _fraseSelecionada.map((item) => item['label'] ?? '').join(' ');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Falando: "$fraseCompleta"'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
+  final _tts = FlutterTts();
+
+  Future<void> _falarFrase(String frase) async {
+  await _tts.setLanguage('pt-BR');
+  await _tts.speak(frase);
+}
+
 
   void _apagarUltimaPalavra() {
     setState(() {
@@ -320,7 +316,11 @@ class _HomePageState extends State<HomePage> with RouteAware {
           IconButton(
             icon: const Icon(Icons.play_circle_outline, size: 26),
             tooltip: 'Falar frase',
-            onPressed: _falarFrase,
+            onPressed: () => _falarFrase(
+              _fraseSelecionada
+                  .map((item) => item['label'] ?? '')
+                  .join(' '),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.backspace_outlined, size: 24),
