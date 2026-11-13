@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 class Cartao_Padrao extends StatelessWidget {
@@ -50,24 +52,22 @@ class Cartao_Padrao extends StatelessWidget {
                           ? Image.network(
                               imagePath!,
                               fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) {
-                                return const Icon(
-                                  Icons.broken_image,
-                                  color: Colors.white,
-                                  size: 30,
-                                );
-                              },
+                              errorBuilder: (context, error, stackTrace) =>
+                                  _fallbackIcon(),
+                            )
+                          : imagePath!.startsWith('/')
+                          // Imagem escolhida offline, ainda no aparelho.
+                          ? Image.file(
+                              File(imagePath!),
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  _fallbackIcon(),
                             )
                           : Image.asset(
                               imagePath!,
                               fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) {
-                                return const Icon(
-                                  Icons.broken_image,
-                                  color: Colors.white,
-                                  size: 30,
-                                );
-                              },
+                              errorBuilder: (context, error, stackTrace) =>
+                                  _fallbackIcon(),
                             ))
                     : Icon(
                         iconData ?? Icons.help_outline,
@@ -101,4 +101,12 @@ class Cartao_Padrao extends StatelessWidget {
       ),
     );
   }
+
+  /// Sem rede a imagem pode não carregar: mostra o ícone do cartão. O rótulo
+  /// e a cor continuam visíveis, então o cartão segue utilizável offline.
+  Widget _fallbackIcon() => Icon(
+    iconData ?? Icons.image_outlined,
+    color: Colors.white,
+    size: 30,
+  );
 }

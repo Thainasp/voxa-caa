@@ -30,6 +30,24 @@ Este projeto está sendo desenvolvido em âmbito acadêmico com foco em **acessi
 * **Back-end:** Spring Boot / Java
 * **Banco de Dados:** PostgreSQL
 
+Pranchas e cartões são persistidos no Supabase usando as tabelas existentes
+`prancha`, `cartao` e `prancha_cartao`, com acesso protegido por políticas RLS.
+A tabela de associação mantém o relacionamento muitos-para-muitos. O app
+sincroniza oito pranchas e 150 cartões gerados a partir do catálogo local
+ARASAAC em `BACKEND/arasaac_dataset/catalogo.json`; não há busca no catálogo
+online do ARASAAC. Execute `BACKEND/database/supabase_content.sql` no SQL Editor
+do Supabase para adicionar os campos complementares, as políticas e as funções
+de inicialização/sincronização. Imagens do dispositivo são enviadas ao bucket privado
+`content-images`; imagens da internet podem ser informadas por URL.
+
+Os pictogramas utilizados foram criados por Sergio Palao para ARASAAC
+(https://arasaac.org), são propriedade do Governo de Aragão e estão sob licença
+Creative Commons BY-NC-SA. O app apresenta essa atribuição na tela inicial e
+inclui a licença fornecida com o conjunto em
+`FRONTEND/voxa/assets/arasaac/LICENCA.txt`.
+Essa licença exige atribuição, uso não comercial e compartilhamento de obras
+derivadas sob a mesma licença.
+
 ---
 
 ## 📁 Estrutura de Categorização (Fitzgerald Modificado)

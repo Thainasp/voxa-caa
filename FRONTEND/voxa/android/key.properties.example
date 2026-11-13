@@ -1,0 +1,7 @@
+# Copie para android/key.properties (NÃO commitar) e ajuste os valores.
+# Gere o keystore com:
+#   keytool -genkey -v -keystore ~/voxa-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias voxa
+storePassword=troque-aqui
+keyPassword=troque-aqui
+keyAlias=voxa
+storeFile=/caminho/absoluto/voxa-release.jks

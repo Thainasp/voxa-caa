@@ -2,7 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:voxa/core/data/sync/sync_service.dart';
+import 'package:voxa/core/services/app_services.dart';
+import 'package:voxa/core/services/emergency_service.dart';
+import 'package:voxa/core/state/profile_provider.dart';
+import 'package:voxa/core/widgets/emergency_button.dart';
 
 import 'package:voxa/core/navigation/route_observer.dart';
 import 'package:voxa/core/presentation/terms_and_conditions.dart';
@@ -44,8 +51,22 @@ void main() async {
     publishableKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
 
+  // SQLite, catálogo, sincronização, notificações, voz e emergência.
+  final services = await AppServices.init();
+
   Supabase.instance.client.auth.onAuthStateChange.listen((data) {
     switch (data.event) {
+      case AuthChangeEvent.signedIn:
+      case AuthChangeEvent.initialSession:
+        final user = data.session?.user;
+        if (user != null) {
+          // Permissão de notificação (Android 13+) e telefone do responsável
+          // guardado para o plano B offline do botão de emergência.
+          services.notifications.requestPermission();
+          services.emergency.cachePhone(user.id);
+          services.sync.sync(showNotifications: true);
+        }
+        break;
       case AuthChangeEvent.passwordRecovery:
         // Chegou pelo link do e-mail (deep link no Android / URL no web).
         // Limpa a pilha para não empilhar a tela duas vezes.
@@ -56,13 +77,25 @@ void main() async {
         break;
       case AuthChangeEvent.signedOut:
         ActiveProfile.clear();
+        services.sync.setActiveProfile(null);
         break;
       default:
         break;
     }
   });
 
-  runApp(const VoxaApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<SyncService>.value(value: services.sync),
+        ChangeNotifierProvider<ProfileProvider>.value(value: services.profile),
+        ChangeNotifierProvider<EmergencyService>.value(
+          value: services.emergency,
+        ),
+      ],
+      child: const VoxaApp(),
+    ),
+  );
 }
 
 final supabase = Supabase.instance.client;
@@ -101,7 +134,12 @@ class VoxaApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: navigatorKey,
-      navigatorObservers: [routeObserver],
+      navigatorObservers: [routeObserver, topRouteTracker],
+      // Botão de emergência sobre todas as telas após o login (item 5).
+      builder: (context, child) => EmergencyButtonOverlay(
+        navigatorKey: navigatorKey,
+        child: child ?? const SizedBox.shrink(),
+      ),
       title: 'Voxa - CAA',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.theme,

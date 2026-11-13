@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:voxa/core/data/sync/sync_service.dart';
+import 'package:voxa/core/services/app_services.dart';
+import 'package:voxa/core/services/connectivity_service.dart';
 import 'package:voxa/core/navigation/route_observer.dart';
 import 'package:voxa/core/state/active_profile.dart';
 import 'package:voxa/models/user_model.dart';
 import 'package:voxa/core/widgets/app_colors.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 
 import '../../../../core/widgets/base_screen_layout.dart';
+// O arquivo se chama "Cartao_padrao.dart" (com C maiúsculo). Em Linux/CI o
+// nome precisa ser idêntico.
 import '../../../../core/widgets/Cartao_padrao.dart';
 import '../../../profile/presentation/profile_access.dart';
 import '../controllers/home_content_controller.dart';
@@ -17,7 +22,7 @@ import '../widgets/category_navigation.dart';
 class HomePage extends StatefulWidget {
   final UserModel? user;
 
-  const HomePage({Key? key, this.user}) : super(key: key);
+  const HomePage({super.key, this.user});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -33,6 +38,8 @@ class _HomePageState extends State<HomePage> with RouteAware {
   late UserModel? _activeUser;
   bool _isLoadingContent = false;
   String? _pendingSwitchNotification;
+  SyncService? _sync;
+  int _seenContentVersion = 0;
 
   @override
   void initState() {
@@ -45,6 +52,12 @@ class _HomePageState extends State<HomePage> with RouteAware {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final sync = context.read<SyncService>();
+    if (!identical(sync, _sync)) {
+      _sync?.removeListener(_onSyncChanged);
+      _sync = sync..addListener(_onSyncChanged);
+      _seenContentVersion = sync.contentVersion;
+    }
     final route = ModalRoute.of(context);
     if (route is PageRoute<dynamic>) {
       routeObserver.subscribe(this, route);
@@ -54,6 +67,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
+    _sync?.removeListener(_onSyncChanged);
     ActiveProfile.notifier.removeListener(_onActiveProfileChanged);
     _lockPortrait();
     super.dispose();
@@ -100,44 +114,61 @@ class _HomePageState extends State<HomePage> with RouteAware {
   // Perfil ativo
   // ---------------------------------------------------------------------------
 
+  /// A sincronização trouxe conteúdo novo da nuvem: recarrega do SQLite.
+  Future<void> _onSyncChanged() async {
+    final sync = _sync;
+    if (sync == null || sync.contentVersion == _seenContentVersion) return;
+    _seenContentVersion = sync.contentVersion;
+    await HomeContentController.reloadFromLocal();
+    if (mounted) setState(() {});
+  }
+
   Future<void> _initActiveProfile() async {
+    setState(() => _isLoadingContent = true);
+    try {
+      await _loadContentForActiveProfile(_activeUser);
+    } catch (error) {
+      _showContentError(error);
+    } finally {
+      if (mounted) setState(() => _isLoadingContent = false);
+    }
+  }
+
+  Future<void> _loadContentForActiveProfile(UserModel? requestedProfile) async {
     final client = Supabase.instance.client;
     final authUser = client.auth.currentUser;
-    if (authUser == null) return;
-
-    _isLoadingContent = true;
-
-    var user = _activeUser;
-
-    // O titular precisa usar o id da tabela `perfil` (e não o id de `usuario`)
-    // para que as pranchas e cartões sejam carregados corretamente.
-    if (user == null || user.isResponsavel) {
-      final master = await ActiveProfile.loadMaster();
-      if (master != null) {
-        user = user == null
-            ? master
-            : user.copyWith(
-                id: master.id,
-                avatarUrl: user.avatarUrl ?? master.avatarUrl,
-              );
-      }
+    if (authUser == null) {
+      throw const AuthException(
+        'Entre na sua conta para carregar suas tábuas e cartões.',
+      );
     }
 
-    user ??= UserModel(
-      id: authUser.id,
-      name: 'Titular',
+    final metadata = authUser.userMetadata ?? const <String, dynamic>{};
+    final fallbackName =
+        requestedProfile?.name ??
+        (metadata['display_name'] ??
+                metadata['nome'] ??
+                metadata['name'] ??
+                authUser.email?.split('@').first ??
+                'Titular')
+            .toString();
+    _activeUser = await HomeContentController.resolveActiveProfile(
+      authUserId: authUser.id,
       email: authUser.email ?? '',
-      isResponsavel: true,
+      requestedProfile: requestedProfile,
+      fallbackName: fallbackName,
+      avatarUrl:
+          requestedProfile?.avatarUrl ?? metadata['avatar_url'] as String?,
     );
+    ActiveProfile.set(_activeUser);
+    await HomeContentController.loadContentForProfile(_activeUser!.id);
+  }
 
-    _activeUser = user;
-    ActiveProfile.set(user);
-
-    await HomeContentController.loadContentForProfile(user.id);
-
-    if (mounted) {
-      setState(() => _isLoadingContent = false);
-    }
+  void _showContentError(Object error) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Falha ao carregar pranchas e cartões: $error')),
+    );
   }
 
   /// Chamado quando outra tela (Trocar de perfil, Editar perfil, Excluir
@@ -163,7 +194,11 @@ class _HomePageState extends State<HomePage> with RouteAware {
       _isLoadingContent = true;
     });
 
-    await HomeContentController.loadContentForProfile(selected.id);
+    try {
+      await HomeContentController.loadContentForProfile(selected.id);
+    } catch (error) {
+      _showContentError(error);
+    }
 
     if (!mounted) return;
     setState(() => _isLoadingContent = false);
@@ -193,7 +228,11 @@ class _HomePageState extends State<HomePage> with RouteAware {
         duration: const Duration(seconds: 3),
         content: Row(
           children: [
-            const Icon(Icons.swap_horiz, color: AppColors.headerGreen, size: 24),
+            const Icon(
+              Icons.swap_horiz,
+              color: AppColors.headerGreen,
+              size: 24,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -221,13 +260,71 @@ class _HomePageState extends State<HomePage> with RouteAware {
     );
   }
 
-  final _tts = FlutterTts();
+  /// RF01: lê a frase inteira montada na barra (motor TTS nativo, pt-BR).
+  void _falarFrase() {
+    if (_fraseSelecionada.isEmpty) return;
+    final fraseCompleta = _fraseSelecionada
+        .map((item) => item['label'] ?? '')
+        .join(' ');
+    AppServices.instance.tts.speak(fraseCompleta);
+  }
 
-  Future<void> _falarFrase(String frase) async {
-  await _tts.setLanguage('pt-BR');
-  await _tts.speak(frase);
-}
+  /// RF01: vocaliza o cartão no momento do toque e o adiciona à frase (RF02).
+  void _tocarCartao(Map symbol) {
+    setState(() => _fraseSelecionada.add(symbol));
+    AppServices.instance.tts.speak(symbol['label']?.toString() ?? '');
+  }
 
+  void _limparFrase() {
+    setState(_fraseSelecionada.clear);
+  }
+
+  Widget _buildSyncBanner(SyncService sync) {
+    final String? message;
+    final IconData icon;
+    if (sync.status == SyncStatus.syncing) {
+      message =
+          'Sincronizando com a nuvem (${sync.progressDone}/${sync.progressTotal})...';
+      icon = Icons.sync;
+    } else if (sync.network == NetworkStatus.offline) {
+      message = sync.pending > 0
+          ? 'Offline: ${sync.pending} alteração(ões) salvas no aparelho.'
+          : 'Offline: usando os dados salvos no aparelho.';
+      icon = Icons.cloud_off;
+    } else if (sync.pending > 0 && !sync.isOnWifi) {
+      message =
+          '${sync.pending} alteração(ões) aguardando Wi-Fi para sincronizar.';
+      icon = Icons.wifi_off;
+    } else {
+      message = null;
+      icon = Icons.check;
+    }
+    if (message == null) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.categoryBlue.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppColors.titleColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: AppColors.titleColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _apagarUltimaPalavra() {
     setState(() {
@@ -237,6 +334,27 @@ class _HomePageState extends State<HomePage> with RouteAware {
     });
   }
 
+  void _showArasaacCredits() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Créditos dos pictogramas'),
+        content: const Text(
+          'Pictogramas criados por Sergio Palao para ARASAAC '
+          '(arasaac.org), propriedade do Governo de Aragão. '
+          'Licença Creative Commons BY-NC-SA '
+          '(Atribuição–NãoComercial–CompartilhaIgual).',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _voltarInicio() {
     setState(() {
       _categoriaAtual = 'Principal';
@@ -244,12 +362,26 @@ class _HomePageState extends State<HomePage> with RouteAware {
     });
   }
 
+  List<Map<String, dynamic>> get _visibleCategories {
+    final allBoards = HomeContentController.boardsWithUserCreatedFirst;
+    return allBoards
+        .where(
+          (board) =>
+              board['key'] != 'Principal' &&
+              (board['catalogoArasaac'] == true || board['parentKey'] == null),
+        )
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isCompactAppBar = screenWidth < 480;
+    final isVeryNarrowAppBar = screenWidth < 360;
     final simbolosAtuais =
         HomeContentController.cardsByBoard[_categoriaAtual] ??
-            HomeContentController.cardsByBoard['Principal'] ??
-            [];
+        HomeContentController.cardsByBoard['Principal'] ??
+        [];
 
     return BaseScreenLayout(
       appBar: AppBar(
@@ -259,21 +391,37 @@ class _HomePageState extends State<HomePage> with RouteAware {
         toolbarHeight: 64,
         automaticallyImplyLeading: false,
         titleSpacing: 0,
-        leadingWidth: 104,
-        leading: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.person_outline, size: 26),
-              tooltip: 'Perfil',
-              onPressed: _openProfile,
-            ),
-            IconButton(
-              icon: const Icon(Icons.home_outlined, size: 28),
-              tooltip: 'Início',
-              onPressed: _voltarInicio,
-            ),
-          ],
-        ),
+        leadingWidth: isVeryNarrowAppBar ? 56 : 104,
+        leading: isVeryNarrowAppBar
+            ? PopupMenuButton<String>(
+                tooltip: 'Navegação',
+                icon: const Icon(Icons.menu),
+                onSelected: (action) {
+                  if (action == 'profile') {
+                    _openProfile();
+                  } else {
+                    _voltarInicio();
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: 'profile', child: Text('Perfil')),
+                  PopupMenuItem(value: 'home', child: Text('Início')),
+                ],
+              )
+            : Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.person_outline, size: 26),
+                    tooltip: 'Perfil',
+                    onPressed: _openProfile,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.home_outlined, size: 28),
+                    tooltip: 'Início',
+                    onPressed: _voltarInicio,
+                  ),
+                ],
+              ),
         title: Container(
           height: 42,
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -312,22 +460,59 @@ class _HomePageState extends State<HomePage> with RouteAware {
                   },
                 ),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.play_circle_outline, size: 26),
-            tooltip: 'Falar frase',
-            onPressed: () => _falarFrase(
-              _fraseSelecionada
-                  .map((item) => item['label'] ?? '')
-                  .join(' '),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.backspace_outlined, size: 24),
-            tooltip: 'Apagar',
-            onPressed: _apagarUltimaPalavra,
-          ),
-        ],
+        actions: isCompactAppBar
+            ? [
+                PopupMenuButton<String>(
+                  tooltip: 'Mais opções',
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (action) {
+                    switch (action) {
+                      case 'credits':
+                        _showArasaacCredits();
+                      case 'speak':
+                        _falarFrase();
+                      case 'delete':
+                        _apagarUltimaPalavra();
+                      case 'clear':
+                        _limparFrase();
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'credits',
+                      child: Text('Créditos dos pictogramas'),
+                    ),
+                    PopupMenuItem(value: 'speak', child: Text('Falar frase')),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Apagar última palavra'),
+                    ),
+                    PopupMenuItem(value: 'clear', child: Text('Limpar frase')),
+                  ],
+                ),
+              ]
+            : [
+                IconButton(
+                  icon: const Icon(Icons.info_outline, size: 24),
+                  tooltip: 'Créditos dos pictogramas',
+                  onPressed: _showArasaacCredits,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.play_circle_outline, size: 26),
+                  tooltip: 'Falar frase',
+                  onPressed: _falarFrase,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.backspace_outlined, size: 24),
+                  tooltip: 'Apagar',
+                  onPressed: _apagarUltimaPalavra,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.clear_all, size: 26),
+                  tooltip: 'Limpar frase',
+                  onPressed: _limparFrase,
+                ),
+              ],
       ),
       body: _isLoadingContent
           ? const Center(
@@ -340,8 +525,8 @@ class _HomePageState extends State<HomePage> with RouteAware {
                 final crossAxisCount = constraints.maxWidth < 480
                     ? 4
                     : isLandscape && constraints.maxWidth >= 700
-                        ? 8
-                        : 6;
+                    ? 8
+                    : 6;
 
                 return Column(
                   children: [
@@ -349,22 +534,26 @@ class _HomePageState extends State<HomePage> with RouteAware {
                       child: Container(
                         decoration: const BoxDecoration(
                           color: AppColors.contentBackground,
-                          borderRadius:
-                              BorderRadius.vertical(top: Radius.circular(30)),
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(30),
+                          ),
                         ),
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                         child: Column(
                           children: [
+                            Consumer<SyncService>(
+                              builder: (_, sync, _) => _buildSyncBanner(sync),
+                            ),
                             Expanded(
                               child: GridView.builder(
                                 padding: const EdgeInsets.all(4.0),
                                 gridDelegate:
                                     SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: crossAxisCount,
-                                  crossAxisSpacing: 10,
-                                  mainAxisSpacing: 10,
-                                  childAspectRatio: 1.0,
-                                ),
+                                      crossAxisCount: crossAxisCount,
+                                      crossAxisSpacing: 10,
+                                      mainAxisSpacing: 10,
+                                      childAspectRatio: 1.0,
+                                    ),
                                 itemCount: simbolosAtuais.length,
                                 itemBuilder: (context, index) {
                                   final symbol = simbolosAtuais[index];
@@ -373,22 +562,16 @@ class _HomePageState extends State<HomePage> with RouteAware {
                                     label: symbol['label'],
                                     imagePath: symbol['imagePath'] as String?,
                                     iconData: symbol['icon'],
-                                    onTap: () {
-                                      setState(() {
-                                        _fraseSelecionada.add(symbol);
-                                      });
-                                    },
+                                    onTap: () => _tocarCartao(symbol),
                                   );
                                 },
                               ),
                             ),
                             const SizedBox(height: 8),
                             CategoryNavigation(
-                              categories: List.from(
-                                HomeContentController.boards,
-                              ),
+                              categories: _visibleCategories,
                               selectedKey: _categoriaAtual,
-                              height: isLandscape ? 64 : 96,
+                              height: isLandscape ? 82 : 96,
                               iconSize: isLandscape ? 36 : 52,
                               onCategorySelected: (category) {
                                 setState(() => _categoriaAtual = category);

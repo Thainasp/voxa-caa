@@ -1,0 +1,26 @@
+ATRIBUICAO OBRIGATORIA DOS PICTOGRAMAS
+======================================
+
+Portugues:
+Os simbolos pictograficos utilizados sao propriedade do Governo de Aragao e
+foram criados por Sergio Palao para o ARASAAC (https://arasaac.org), que os
+distribui sob licenca Creative Commons BY-NC-SA.
+
+Espanol:
+Los simbolos pictograficos utilizados son propiedad del Gobierno de Aragon y
+han sido creados por Sergio Palao para ARASAAC (https://arasaac.org) que los
+distribuye bajo licencia Creative Commons (BY-NC-SA).
+
+English:
+The pictographic symbols used are the property of the Government of Aragon and
+have been created by Sergio Palao for ARASAAC (https://arasaac.org), which
+distributes them under a Creative Commons BY-NC-SA licence.
+
+O QUE A LICENCA EXIGE
+---------------------
+  BY  - citar autor (Sergio Palao), procedencia (ARASAAC) e a licenca.
+  NC  - uso NAO COMERCIAL. Aplicativos pagos, com anuncios ou vendidos
+        exigem autorizacao previa por escrito do ARASAAC.
+  SA  - qualquer obra derivada deve ser distribuida sob a MESMA licenca.
+
+Duvidas sobre uso: https://arasaac.org  ->  Condicoes de uso / Contato.

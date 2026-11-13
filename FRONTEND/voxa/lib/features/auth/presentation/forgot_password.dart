@@ -77,7 +77,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    final emailRegex = RegExp(r'^[\w.+\-]+@([\w\-]+\.)+[A-Za-z]{2,}$');
 
     return Scaffold(
       backgroundColor: AppColors.contentBackground,

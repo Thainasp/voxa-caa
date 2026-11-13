@@ -12,10 +12,31 @@ class HomeNavigationBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
+    // Correções item 1: entre o corpo da tela e esta barra aparecia uma linha
+    // fina. Era o fundo do Scaffold (verde na tela de Perfil) aparecendo pela
+    // emenda de subpixel entre os dois. A faixa abaixo, desenhada 2 px acima
+    // da barra com a mesma cor do painel, cobre essa emenda em todas as telas.
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        _buildBar(context, bottomInset),
+        const Positioned(
+          top: -2,
+          left: 0,
+          right: 0,
+          height: 3,
+          child: IgnorePointer(
+            child: ColoredBox(color: AppColors.contentBackground),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBar(BuildContext context, double bottomInset) {
     return Container(
       decoration: const BoxDecoration(
         color: AppColors.contentBackground,
-        border: Border.fromBorderSide(BorderSide.none),
       ),
       height: 64 + bottomInset,
       child: Align(

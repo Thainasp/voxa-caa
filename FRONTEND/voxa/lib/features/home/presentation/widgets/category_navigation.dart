@@ -6,6 +6,7 @@ class CategoryNavigation extends StatefulWidget {
   final List<Map<String, dynamic>> categories;
   final String selectedKey;
   final ValueChanged<String> onCategorySelected;
+  final VoidCallback? onBack;
   final double height;
   final double iconSize;
 
@@ -14,6 +15,7 @@ class CategoryNavigation extends StatefulWidget {
     required this.categories,
     required this.selectedKey,
     required this.onCategorySelected,
+    this.onBack,
     this.height = 96,
     this.iconSize = 52,
   });
@@ -41,6 +43,12 @@ class _CategoryNavigationState extends State<CategoryNavigation> {
       ),
       child: Row(
         children: [
+          if (widget.onBack != null)
+            _NavigationArrow(
+              icon: Icons.arrow_upward,
+              tooltip: 'Voltar para a categoria anterior',
+              onPressed: widget.onBack!,
+            ),
           _NavigationArrow(
             icon: Icons.chevron_left,
             tooltip: 'Mostrar categorias anteriores',
@@ -117,18 +125,32 @@ class _CategoryNavigationItem extends StatelessWidget {
       label: label,
       child: GestureDetector(
         onTap: onTap,
-        child: AspectRatio(
-          aspectRatio: 1,
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.categoryBlue,
-              borderRadius: BorderRadius.circular(14),
-              border: isSelected
-                  ? Border.all(color: Colors.white, width: 2)
-                  : null,
-            ),
-            child: Icon(icon, color: Colors.white, size: iconSize),
+        child: SizedBox(
+          width: 84,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                height: 56,
+                width: 56,
+                decoration: BoxDecoration(
+                  color: AppColors.categoryBlue,
+                  borderRadius: BorderRadius.circular(14),
+                  border: isSelected
+                      ? Border.all(color: Colors.white, width: 2)
+                      : null,
+                ),
+                child: Icon(icon, color: Colors.white, size: iconSize),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 10),
+              ),
+            ],
           ),
         ),
       ),

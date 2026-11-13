@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:voxa/core/widgets/app_colors.dart';
+
 import '../../../../core/widgets/base_screen_layout.dart';
 import '../../../../core/widgets/curved_content_panel.dart';
 import '../../../../core/widgets/home_navigation_bar.dart';
@@ -28,42 +29,53 @@ class _EditPesquisaState extends State<Edit_pesquisa> {
     super.dispose();
   }
 
-  void _onBoardSaved(Map<String, dynamic> savedBoard, bool isNew) {
-    setState(() {
-      if (isNew) {
-        HomeContentController.boards.add(savedBoard);
-        HomeContentController.cardsByBoard[savedBoard['key']] = [];
-      } else {
-        final index = HomeContentController.boards.indexWhere(
-          (b) => b['key'] == savedBoard['key'],
-        );
-        if (index != -1) HomeContentController.boards[index] = savedBoard;
-      }
-    });
+  Future<void> _onBoardSaved(
+    Map<String, dynamic> savedBoard,
+    bool isNew,
+  ) async {
+    try {
+      await HomeContentController.saveBoard(savedBoard, isNew: isNew);
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível salvar a tábua: $error')),
+      );
+    }
   }
 
-  void _onCardSaved(Map<String, dynamic> savedCard, String boardKey, bool isNew) {
-    setState(() {
-      if (!isNew) {
-        for (final cards in HomeContentController.cardsByBoard.values) {
-          cards.removeWhere((c) => c['label'] == savedCard['label']);
-        }
-      }
-      HomeContentController.cardsByBoard.putIfAbsent(boardKey, () => []).add(savedCard);
-    });
+  Future<void> _onCardSaved(
+    Map<String, dynamic> savedCard,
+    String boardKey,
+    bool isNew,
+  ) async {
+    try {
+      await HomeContentController.saveCard(savedCard, boardKey, isNew: isNew);
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível salvar o cartão: $error')),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final query = _searchQuery.toLowerCase();
-    final boards = HomeContentController.boards.where((b) {
+    final editableBoards = HomeContentController.editableBoards;
+    final boardsForEditing = HomeContentController.boardsWithUserCreatedFirst;
+    final editableBoardKeys = editableBoards.map((b) => b['key']).toSet();
+    final boards = boardsForEditing.where((b) {
       return (b['label'] as String).toLowerCase().contains(query);
     }).toList();
 
     final allCards = [];
-    for (final entry in HomeContentController.cardsByBoard.entries) {
+    for (final entry in HomeContentController.cardsByBoard.entries.where(
+      (entry) => editableBoardKeys.contains(entry.key),
+    )) {
       for (final card in entry.value) {
-        if (!allCards.any((c) => c['label'] == card['label'])) {
+        if (!allCards.any((c) => c['id'] == card['id'])) {
           final cardCopy = Map<String, dynamic>.from(card);
           cardCopy['boardKey'] = entry.key;
           allCards.add(cardCopy);
@@ -101,7 +113,11 @@ class _EditPesquisaState extends State<Edit_pesquisa> {
                     fontWeight: FontWeight.w300,
                     color: Colors.black38,
                   ),
-                  prefixIcon: const Icon(Icons.search, size: 20, color: Colors.black45),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    size: 20,
+                    color: Colors.black45,
+                  ),
                   suffixIcon: _searchQuery.isEmpty
                       ? null
                       : IconButton(
@@ -134,7 +150,11 @@ class _EditPesquisaState extends State<Edit_pesquisa> {
                 ),
               ),
             ),
-            const Divider(color: AppColors.headerGreen, thickness: 1, height: 1),
+            const Divider(
+              color: AppColors.headerGreen,
+              thickness: 1,
+              height: 1,
+            ),
             const SizedBox(height: 16),
 
             LayoutBuilder(
@@ -156,9 +176,13 @@ class _EditPesquisaState extends State<Edit_pesquisa> {
                         label: 'Nova Tábua',
                         onTap: () async {
                           final result = await Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const CriarTabuaPage()),
+                            MaterialPageRoute(
+                              builder: (_) => const CriarTabuaPage(),
+                            ),
                           );
-                          if (result != null) _onBoardSaved(result, true);
+                          if (result != null) {
+                            await _onBoardSaved(result, true);
+                          }
                         },
                       );
                     }
@@ -170,9 +194,13 @@ class _EditPesquisaState extends State<Edit_pesquisa> {
                       color: AppColors.categoryBlue,
                       onTap: () async {
                         final result = await Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => EditTabuaPage(board: board)),
+                          MaterialPageRoute(
+                            builder: (_) => EditTabuaPage(board: board),
+                          ),
                         );
-                        if (result != null) _onBoardSaved(result, false);
+                        if (result != null) {
+                          await _onBoardSaved(result, false);
+                        }
                       },
                     );
                   },
@@ -193,7 +221,11 @@ class _EditPesquisaState extends State<Edit_pesquisa> {
                 ),
               ),
             ),
-            const Divider(color: AppColors.headerGreen, thickness: 1, height: 1),
+            const Divider(
+              color: AppColors.headerGreen,
+              thickness: 1,
+              height: 1,
+            ),
             const SizedBox(height: 16),
 
             LayoutBuilder(
@@ -215,10 +247,16 @@ class _EditPesquisaState extends State<Edit_pesquisa> {
                         label: 'Novo Cartão',
                         onTap: () async {
                           final result = await Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const CriarCartaoPage()),
+                            MaterialPageRoute(
+                              builder: (_) => const CriarCartaoPage(),
+                            ),
                           );
                           if (result != null) {
-                            _onCardSaved(result['card'], result['boardKey'], true);
+                            await _onCardSaved(
+                              Map<String, dynamic>.from(result['card']),
+                              result['boardKey'] as String,
+                              true,
+                            );
                           }
                         },
                       );
@@ -239,7 +277,11 @@ class _EditPesquisaState extends State<Edit_pesquisa> {
                           ),
                         );
                         if (result != null) {
-                          _onCardSaved(result['card'], result['boardKey'], false);
+                          await _onCardSaved(
+                            Map<String, dynamic>.from(result['card']),
+                            result['boardKey'] as String,
+                            false,
+                          );
                         }
                       },
                     );
@@ -329,7 +371,11 @@ class _ItemDisplayTile extends StatelessWidget {
                         ? Image.network(imagePath!, fit: BoxFit.contain)
                         : Image.asset(imagePath!, fit: BoxFit.contain),
                   )
-                : Icon(icon ?? Icons.image_outlined, color: Colors.white, size: 36),
+                : Icon(
+                    icon ?? Icons.image_outlined,
+                    color: Colors.white,
+                    size: 36,
+                  ),
           ),
           const SizedBox(height: 6),
           Text(

@@ -121,8 +121,8 @@ class _NewPasswordScreenState extends State<NewPasswordScreen> {
                       controller: _passwordController,
                       isPassword: true,
                       validator: (value) {
-                        if (value == null || value.length < 6) {
-                          return 'A senha deve conter no mínimo 6 dígitos';
+                        if (value == null || value.length < 8) {
+                          return 'A senha deve conter no mínimo 8 caracteres';
                         }
                         return null;
                       },

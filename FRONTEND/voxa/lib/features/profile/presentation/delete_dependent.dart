@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:voxa/core/data/remote/profile_api.dart';
+import 'package:voxa/core/services/app_services.dart';
 import 'package:voxa/core/state/active_profile.dart';
 import 'package:voxa/core/widgets/app_colors.dart';
 import 'package:voxa/core/widgets/base_screen_layout.dart';
@@ -19,6 +23,8 @@ class DeleteDependentScreen extends StatefulWidget {
 
 class _DeleteDependentScreenState extends State<DeleteDependentScreen> {
   final SupabaseClient _supabase = Supabase.instance.client;
+  ProfileApi get _profileApi =>
+      AppServices.isReady ? AppServices.instance.profileApi : ProfileApi();
 
   List<UserModel> _dependents = [];
   final Set<String> _selectedProfileIds = {};
@@ -44,21 +50,7 @@ class _DeleteDependentScreenState extends State<DeleteDependentScreen> {
     }
 
     try {
-      final data = await _supabase
-          .from('perfil')
-          .select('id, nome, avatar_url, is_responsavel')
-          .eq('usuario_id', authUser.id)
-          .eq('is_responsavel', false)
-          .order('nome', ascending: true);
-
-      final list = (data as List).map<UserModel>((item) {
-        return UserModel(
-          id: item['id'] as String,
-          name: item['nome'] as String? ?? 'Dependente',
-          avatarUrl: item['avatar_url'] as String?,
-          isResponsavel: false,
-        );
-      }).toList();
+      final list = await _profileApi.fetchDependents(authUser.id);
 
       if (mounted) {
         setState(() {
@@ -66,8 +58,9 @@ class _DeleteDependentScreenState extends State<DeleteDependentScreen> {
           _isLoading = false;
         });
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) setState(() => _isLoading = false);
+      _showMessage('Não foi possível carregar os perfis: $error');
     }
   }
 
@@ -234,6 +227,13 @@ class _DeleteDependentScreenState extends State<DeleteDependentScreen> {
           },
         );
       },
+    ).whenComplete(
+      // Espera a animação de fechamento do diálogo antes de liberar o
+      // controller (o campo ainda é desenhado durante a transição).
+      () => Future<void>.delayed(
+        const Duration(milliseconds: 400),
+        passwordController.dispose,
+      ),
     );
   }
 
@@ -257,21 +257,14 @@ class _DeleteDependentScreenState extends State<DeleteDependentScreen> {
 
       final idsToDelete = _selectedProfileIds.toList();
 
-      // Filtra também por dono e por "não responsável": o titular nunca pode
-      // ser removido por aqui, mesmo que um id errado chegue à lista.
-      final deleted = await _supabase
-          .from('perfil')
-          .delete()
-          .eq('usuario_id', authUser.id)
-          .eq('is_responsavel', false)
-          .inFilter('id', idsToDelete)
-          .select('id');
-
-      if ((deleted as List).isEmpty) {
-        _showMessage(
-          'Nenhum perfil foi excluído. Verifique as permissões e tente novamente.',
-        );
-        return false;
+      // Função transacional do banco (excluir_dependente): valida dono e
+      // "não responsável" e apaga o conteúdo do perfil numa única transação.
+      // Antes o DELETE direto em cascata estourava o tempo (erro 57014).
+      for (final id in idsToDelete) {
+        await _profileApi.deleteDependent(id, authUser.id);
+        if (AppServices.isReady) {
+          await AppServices.instance.store.deleteProfile(id);
+        }
       }
 
       // Volta para o titular (master) como perfil ativo do app.
@@ -294,6 +287,19 @@ class _DeleteDependentScreenState extends State<DeleteDependentScreen> {
 
       _showMessage('Perfil(is) dependente(s) excluído(s) com sucesso.');
       return true;
+    } on TimeoutException {
+      _showMessage(
+        'O servidor demorou para responder. Verifique a conexão e tente de novo.',
+      );
+      return false;
+    } on PostgrestException catch (e) {
+      _showMessage(
+        e.code == '57014'
+            ? 'A exclusão demorou demais no banco. Aplique a migração '
+                  'voxa_migracao_v2.sql no Supabase e tente novamente.'
+            : 'Não foi possível excluir: ${e.message}',
+      );
+      return false;
     } on AuthException catch (e) {
       _showMessage(
         e.message == 'Invalid login credentials'
