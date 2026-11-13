@@ -140,8 +140,8 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
                 controller: _newPasswordController,
                 isPassword: true,
                 validator: (value) {
-                  if (value == null || value.length < 6) {
-                    return 'A nova senha deve conter no mínimo 6 dígitos';
+                  if (value == null || value.length < 8) {
+                    return 'A nova senha deve conter no mínimo 8 caracteres';
                   }
                   if (value == _currentPasswordController.text) {
                     return 'A nova senha não pode ser igual à senha atual';

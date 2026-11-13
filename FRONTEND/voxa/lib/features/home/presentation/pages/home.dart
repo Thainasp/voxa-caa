@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:voxa/core/data/sync/sync_service.dart';
+import 'package:voxa/core/services/app_services.dart';
+import 'package:voxa/core/services/connectivity_service.dart';
 import 'package:voxa/core/navigation/route_observer.dart';
 import 'package:voxa/core/state/active_profile.dart';
 import 'package:voxa/models/user_model.dart';
@@ -34,6 +38,8 @@ class _HomePageState extends State<HomePage> with RouteAware {
   late UserModel? _activeUser;
   bool _isLoadingContent = false;
   String? _pendingSwitchNotification;
+  SyncService? _sync;
+  int _seenContentVersion = 0;
 
   @override
   void initState() {
@@ -46,6 +52,12 @@ class _HomePageState extends State<HomePage> with RouteAware {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final sync = context.read<SyncService>();
+    if (!identical(sync, _sync)) {
+      _sync?.removeListener(_onSyncChanged);
+      _sync = sync..addListener(_onSyncChanged);
+      _seenContentVersion = sync.contentVersion;
+    }
     final route = ModalRoute.of(context);
     if (route is PageRoute<dynamic>) {
       routeObserver.subscribe(this, route);
@@ -55,6 +67,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
+    _sync?.removeListener(_onSyncChanged);
     ActiveProfile.notifier.removeListener(_onActiveProfileChanged);
     _lockPortrait();
     super.dispose();
@@ -101,6 +114,15 @@ class _HomePageState extends State<HomePage> with RouteAware {
   // Perfil ativo
   // ---------------------------------------------------------------------------
 
+  /// A sincronização trouxe conteúdo novo da nuvem: recarrega do SQLite.
+  Future<void> _onSyncChanged() async {
+    final sync = _sync;
+    if (sync == null || sync.contentVersion == _seenContentVersion) return;
+    _seenContentVersion = sync.contentVersion;
+    await HomeContentController.reloadFromLocal();
+    if (mounted) setState(() {});
+  }
+
   Future<void> _initActiveProfile() async {
     setState(() => _isLoadingContent = true);
     try {
@@ -138,6 +160,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
       avatarUrl:
           requestedProfile?.avatarUrl ?? metadata['avatar_url'] as String?,
     );
+    ActiveProfile.set(_activeUser);
     await HomeContentController.loadContentForProfile(_activeUser!.id);
   }
 
@@ -171,7 +194,11 @@ class _HomePageState extends State<HomePage> with RouteAware {
       _isLoadingContent = true;
     });
 
-    await HomeContentController.loadContentForProfile(selected.id);
+    try {
+      await HomeContentController.loadContentForProfile(selected.id);
+    } catch (error) {
+      _showContentError(error);
+    }
 
     if (!mounted) return;
     setState(() => _isLoadingContent = false);
@@ -233,15 +260,68 @@ class _HomePageState extends State<HomePage> with RouteAware {
     );
   }
 
+  /// RF01: lê a frase inteira montada na barra (motor TTS nativo, pt-BR).
   void _falarFrase() {
     if (_fraseSelecionada.isEmpty) return;
-    String fraseCompleta = _fraseSelecionada
+    final fraseCompleta = _fraseSelecionada
         .map((item) => item['label'] ?? '')
         .join(' ');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Falando: "$fraseCompleta"'),
-        duration: const Duration(seconds: 2),
+    AppServices.instance.tts.speak(fraseCompleta);
+  }
+
+  /// RF01: vocaliza o cartão no momento do toque e o adiciona à frase (RF02).
+  void _tocarCartao(Map symbol) {
+    setState(() => _fraseSelecionada.add(symbol));
+    AppServices.instance.tts.speak(symbol['label']?.toString() ?? '');
+  }
+
+  void _limparFrase() {
+    setState(_fraseSelecionada.clear);
+  }
+
+  Widget _buildSyncBanner(SyncService sync) {
+    final String? message;
+    final IconData icon;
+    if (sync.status == SyncStatus.syncing) {
+      message =
+          'Sincronizando com a nuvem (${sync.progressDone}/${sync.progressTotal})...';
+      icon = Icons.sync;
+    } else if (sync.network == NetworkStatus.offline) {
+      message = sync.pending > 0
+          ? 'Offline: ${sync.pending} alteração(ões) salvas no aparelho.'
+          : 'Offline: usando os dados salvos no aparelho.';
+      icon = Icons.cloud_off;
+    } else if (sync.pending > 0 && !sync.isOnWifi) {
+      message =
+          '${sync.pending} alteração(ões) aguardando Wi-Fi para sincronizar.';
+      icon = Icons.wifi_off;
+    } else {
+      message = null;
+      icon = Icons.check;
+    }
+    if (message == null) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.categoryBlue.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppColors.titleColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: AppColors.titleColor,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -393,6 +473,8 @@ class _HomePageState extends State<HomePage> with RouteAware {
                         _falarFrase();
                       case 'delete':
                         _apagarUltimaPalavra();
+                      case 'clear':
+                        _limparFrase();
                     }
                   },
                   itemBuilder: (context) => const [
@@ -405,6 +487,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
                       value: 'delete',
                       child: Text('Apagar última palavra'),
                     ),
+                    PopupMenuItem(value: 'clear', child: Text('Limpar frase')),
                   ],
                 ),
               ]
@@ -423,6 +506,11 @@ class _HomePageState extends State<HomePage> with RouteAware {
                   icon: const Icon(Icons.backspace_outlined, size: 24),
                   tooltip: 'Apagar',
                   onPressed: _apagarUltimaPalavra,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.clear_all, size: 26),
+                  tooltip: 'Limpar frase',
+                  onPressed: _limparFrase,
                 ),
               ],
       ),
@@ -453,6 +541,9 @@ class _HomePageState extends State<HomePage> with RouteAware {
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                         child: Column(
                           children: [
+                            Consumer<SyncService>(
+                              builder: (_, sync, _) => _buildSyncBanner(sync),
+                            ),
                             Expanded(
                               child: GridView.builder(
                                 padding: const EdgeInsets.all(4.0),
@@ -471,11 +562,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
                                     label: symbol['label'],
                                     imagePath: symbol['imagePath'] as String?,
                                     iconData: symbol['icon'],
-                                    onTap: () {
-                                      setState(() {
-                                        _fraseSelecionada.add(symbol);
-                                      });
-                                    },
+                                    onTap: () => _tocarCartao(symbol),
                                   );
                                 },
                               ),

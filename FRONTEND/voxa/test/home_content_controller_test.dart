@@ -470,75 +470,66 @@ void main() {
     );
   });
 
-  test('semeia as pranchas e cartões locais do catálogo ARASAAC', () async {
-    boards = [];
-    catalogNeedsSync = true;
-    await HomeContentController.loadContentForProfile(_profileId);
+  test(
+    'monta o catálogo ARASAAC localmente, sem copiar para o Supabase',
+    () async {
+      boards = [];
+      HomeContentController.catalogEnabledForTesting = true;
+      await HomeContentController.loadContentForProfile(_profileId);
 
-    expect(
-      requests.any(
-        (request) => request.url.path.endsWith(
-          '/rest/v1/rpc/sincronizar_catalogo_arasaac_completo',
+      // O catálogo não é mais sincronizado por perfil (causa do erro 57014).
+      expect(
+        requests.any(
+          (request) => request.url.path.contains('/rpc/sincronizar_catalogo'),
         ),
-      ),
-      isTrue,
-    );
-    expect(HomeContentController.boards, hasLength(611));
-    expect(
-      HomeContentController.boards
-          .where((board) => board['catalogoArasaac'] == true)
-          .length,
-      611,
-    );
-    final associationRequests = requests
-        .where(
-          (request) =>
-              request.url.path.endsWith('/rest/v1/prancha_cartao') &&
-              request.method == 'GET',
-        )
-        .toList();
-    expect(associationRequests.length, greaterThan(1));
-    expect(
-      associationRequests.every(
-        (request) => request.url.toString().length < 10000,
-      ),
-      isTrue,
-    );
-    expect(cards, hasLength(13767));
-    final principalCards = HomeContentController.cardsByBoard['Principal']!;
-    expect(principalCards, hasLength(24));
-    expect(
-      HomeContentController.cardsByBoard.values.fold<int>(
-        0,
-        (count, boardCards) => count + boardCards.length,
-      ),
-      26852,
-    );
-    final catalog = jsonDecode(
-      await rootBundle.loadString('assets/arasaac/catalogo_inicial.json'),
-    ) as Map<String, dynamic>;
-    expect(catalog['categories'], hasLength(610));
-    expect(catalog['pictograms'], hasLength(13767));
-    final firstPrincipalId = (catalog['principalIds'] as List).first.toString();
-    final firstPrincipalCard = principalCards.first;
-    expect(firstPrincipalCard['arasaacId'], firstPrincipalId);
-    expect(
-      firstPrincipalCard['imagePath'],
-      endsWith('/arasaac-catalog/$firstPrincipalId.png'),
-    );
-    expect(associations, isNotEmpty);
-    expect(
-      requests.any(
-        (request) =>
-            request.url.path.endsWith(
-              '/rest/v1/rpc/sincronizar_catalogo_arasaac_completo',
-            ) &&
-            (jsonDecode(request.body) as Map<String, dynamic>)['p_versao'] ==
-                'arasaac-2026-11-full-v2',
-      ),
-      isTrue,
-    );
-  });
+        isFalse,
+      );
+      expect(cards, isEmpty);
+
+      expect(HomeContentController.boards, hasLength(611));
+      expect(
+        HomeContentController.boards.every(
+          (board) => board['catalogoArasaac'] == true,
+        ),
+        isTrue,
+      );
+      final principalCards = HomeContentController.cardsByBoard['Principal']!;
+      expect(principalCards, hasLength(24));
+      expect(
+        HomeContentController.cardsByBoard.values.fold<int>(
+          0,
+          (count, boardCards) => count + boardCards.length,
+        ),
+        26852,
+      );
+
+      final catalog = jsonDecode(
+        await rootBundle.loadString('assets/arasaac/catalogo_inicial.json'),
+      ) as Map<String, dynamic>;
+      expect(catalog['categories'], hasLength(610));
+      expect(catalog['pictograms'], hasLength(13767));
+      final firstPrincipalId = (catalog['principalIds'] as List).first
+          .toString();
+      final firstPrincipalCard = principalCards.first;
+      expect(firstPrincipalCard['arasaacId'], firstPrincipalId);
+      // "eu" é pronome pessoal: amarelo na chave Fitzgerald (RF03).
+      expect(firstPrincipalCard['color'], isA<Color>());
+      expect(
+        firstPrincipalCard['imagePath'],
+        anyOf(
+          'assets/arasaac/$firstPrincipalId.png',
+          endsWith('/arasaac-catalog/$firstPrincipalId.png'),
+        ),
+      );
+
+      // Pranchas do catálogo não podem ser editadas nem excluídas.
+      expect(HomeContentController.editableBoards, isEmpty);
+      expect(
+        () => HomeContentController.deleteBoard('Principal'),
+        throwsStateError,
+      );
+    },
+  );
 
   test('migra o conteúdo local legado para o Supabase', () async {
     SharedPreferences.setMockInitialValues({

@@ -1,11 +1,31 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:voxa/core/data/local/catalog_repository.dart';
+import 'package:voxa/core/data/local/local_content_store.dart';
+import 'package:voxa/core/data/remote/content_api.dart';
+import 'package:voxa/core/services/app_services.dart';
+import 'package:voxa/core/services/connectivity_service.dart';
+import 'package:voxa/core/utils/uuid.dart';
 import 'package:voxa/models/user_model.dart';
 
+/// Conteúdo (pranchas e cartões) do perfil ativo.
+///
+/// Fluxo offline-first (Correções itens 2, 3 e 4):
+/// 1. O catálogo ARASAAC vem do SQLite do aparelho (CatalogRepository).
+/// 2. O conteúdo criado pelo usuário abre direto do SQLite; a nuvem é
+///    consultada em segundo plano e, quando muda, a Home recarrega.
+/// 3. Alterações com Wi-Fi vão direto ao Supabase (e são espelhadas no
+///    SQLite). Sem Wi-Fi, ficam no SQLite e entram na fila de sincronização.
+///
+/// Toda chamada de rede passa pela [ContentApi] (camada de rede).
 class HomeContentController {
   static List boards = [];
   static Map<String, List> cardsByBoard = {};
@@ -26,14 +46,50 @@ class HomeContentController {
   }
 
   static String? _activeProfileId;
-  static SupabaseClient? clientForTesting;
+  static String? get activeProfileId => _activeProfileId;
+
+  // ---------------------------------------------------------------------------
+  // Dependências (substituíveis nos testes)
+  // ---------------------------------------------------------------------------
+
+  static SupabaseClient? _clientForTesting;
+  static LocalContentStore? _testStore;
+  static CatalogRepository? _testCatalog;
+
+  /// Nos testes o controller usa este cliente, um SQLite em memória, considera
+  /// que há Wi-Fi e não carrega o catálogo (a não ser que
+  /// [catalogEnabledForTesting] seja true).
+  static SupabaseClient? get clientForTesting => _clientForTesting;
+  static set clientForTesting(SupabaseClient? client) {
+    _clientForTesting = client;
+    _testStore = null;
+    _testCatalog = null;
+    catalogEnabledForTesting = false;
+  }
+
+  static bool catalogEnabledForTesting = false;
+
+  static bool get _testing => _clientForTesting != null;
   static SupabaseClient get _client =>
-      clientForTesting ?? Supabase.instance.client;
+      _clientForTesting ?? Supabase.instance.client;
+  static ContentApi get _api => _testing
+      ? ContentApi(_clientForTesting!)
+      : AppServices.instance.contentApi;
+  static LocalContentStore get _store => _testing
+      ? (_testStore ??= InMemoryContentStore())
+      : AppServices.instance.store;
+  static CatalogRepository? get _catalog {
+    if (_testing) {
+      return catalogEnabledForTesting
+          ? (_testCatalog ??= CatalogRepository(_store))
+          : null;
+    }
+    return AppServices.instance.catalog;
+  }
+
   static int _idCounter = 0;
-  static const _imageBucket = 'content-images';
-  static const _catalogBucket = 'arasaac-catalog';
-  static const _signedUrlLifetimeSeconds = 3600;
-  static const _catalogVersion = 'arasaac-2026-11-full-v2';
+  static const _catalogBucket = ContentApi.catalogBucket;
+  static const _imageTimeout = Duration(seconds: 4);
 
   static IconData _getIconData(String? iconName) {
     switch (iconName) {
@@ -223,6 +279,13 @@ class HomeContentController {
   static String _legacyStorageKey(String profileId) =>
       'voxa.content.$profileId';
 
+  static String _profileCacheKey(String authUserId, String slot) =>
+      'voxa.profile.$authUserId.$slot';
+
+  // ---------------------------------------------------------------------------
+  // Perfil ativo
+  // ---------------------------------------------------------------------------
+
   static Future<UserModel> resolveActiveProfile({
     required String authUserId,
     required String email,
@@ -240,47 +303,80 @@ class HomeContentController {
 
     final isAuthUserId =
         requestedProfile == null || requestedProfile.id == authUserId;
-    final profileRow = isAuthUserId
-        ? await _client
-              .from('perfil')
-              .select()
-              .eq('usuario_id', authUserId)
-              .eq('is_responsavel', true)
-              .maybeSingle()
-        : await _client
-              .from('perfil')
-              .select()
-              .eq('id', requestedProfile.id)
-              .eq('usuario_id', authUserId)
-              .maybeSingle();
+    try {
+      final profileRow = isAuthUserId
+          ? await _client
+                .from('perfil')
+                .select()
+                .eq('usuario_id', authUserId)
+                .eq('is_responsavel', true)
+                .maybeSingle()
+          : await _client
+                .from('perfil')
+                .select()
+                .eq('id', requestedProfile.id)
+                .eq('usuario_id', authUserId)
+                .maybeSingle();
 
-    if (profileRow == null && !isAuthUserId) {
-      throw StateError(
-        'O perfil selecionado não pertence à conta autenticada ou não existe.',
+      if (profileRow == null && !isAuthUserId) {
+        throw StateError(
+          'O perfil selecionado não pertence à conta autenticada ou não existe.',
+        );
+      }
+
+      final resolvedRow =
+          profileRow ??
+          await _client
+              .from('perfil')
+              .insert({
+                'usuario_id': authUserId,
+                'nome': fallbackName,
+                'is_responsavel': true,
+                ...?avatarUrl == null ? null : {'avatar_url': avatarUrl},
+              })
+              .select()
+              .single();
+
+      final profile = UserModel(
+        id: resolvedRow['id'] as String,
+        name: resolvedRow['nome'] as String? ?? fallbackName,
+        email: email,
+        avatarUrl: resolvedRow['avatar_url'] as String? ?? avatarUrl,
+        isResponsavel: resolvedRow['is_responsavel'] as bool? ?? isAuthUserId,
       );
+      await _cacheProfile(authUserId, profile);
+      return profile;
+    } catch (error) {
+      if (!_isNetworkError(error)) rethrow;
+      // Sem rede: usa o último perfil conhecido para o app abrir offline.
+      if (!isAuthUserId) return requestedProfile!;
+      final cached = await _cachedProfile(authUserId, 'master');
+      if (cached != null) return cached;
+      rethrow;
     }
-
-    final resolvedRow =
-        profileRow ??
-        await _client
-            .from('perfil')
-            .insert({
-              'usuario_id': authUserId,
-              'nome': fallbackName,
-              'is_responsavel': true,
-              ...?avatarUrl == null ? null : {'avatar_url': avatarUrl},
-            })
-            .select()
-            .single();
-
-    return UserModel(
-      id: resolvedRow['id'] as String,
-      name: resolvedRow['nome'] as String? ?? fallbackName,
-      email: email,
-      avatarUrl: resolvedRow['avatar_url'] as String? ?? avatarUrl,
-      isResponsavel: resolvedRow['is_responsavel'] as bool? ?? isAuthUserId,
-    );
   }
+
+  static Future<void> _cacheProfile(String authUserId, UserModel profile) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = jsonEncode(profile.toMap());
+      await prefs.setString(_profileCacheKey(authUserId, profile.id), json);
+      if (profile.isResponsavel) {
+        await prefs.setString(_profileCacheKey(authUserId, 'master'), json);
+      }
+    } catch (_) {}
+  }
+
+  static Future<UserModel?> _cachedProfile(String authUserId, String slot) async {
+    final prefs = await SharedPreferences.getInstance();
+    final json = prefs.getString(_profileCacheKey(authUserId, slot));
+    if (json == null) return null;
+    return UserModel.fromMap(Map<String, dynamic>.from(jsonDecode(json) as Map));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Carregamento
+  // ---------------------------------------------------------------------------
 
   static List<Map<String, dynamic>> _copyBoards() =>
       boards.map((board) => Map<String, dynamic>.from(board as Map)).toList();
@@ -292,11 +388,16 @@ class HomeContentController {
     ),
   );
 
+  /// Carrega o conteúdo do perfil.
+  ///
+  /// Com cache local: devolve na hora e atualiza pela nuvem em segundo plano.
+  /// Sem cache (primeira vez neste aparelho): baixa da nuvem em qualquer rede,
+  /// para o perfil não abrir vazio; depois disso só sincroniza no Wi-Fi.
   static Future<void> loadContentForProfile(String profileId) async {
     if (profileId.trim().isEmpty) {
       throw ArgumentError.value(profileId, 'profileId', 'Não pode ser vazio.');
     }
-    if (clientForTesting == null && _client.auth.currentUser == null) {
+    if (!_testing && _client.auth.currentUser == null) {
       throw const AuthException(
         'Entre na sua conta para carregar suas tábuas e cartões.',
       );
@@ -305,136 +406,120 @@ class HomeContentController {
     boards = [];
     cardsByBoard = {};
     _activeProfileId = profileId;
+    if (!_testing) AppServices.instance.sync.setActiveProfile(profileId);
+
+    final catalog = await _buildCatalog();
+    final local = _testing ? null : await _store.loadProfileContent(profileId);
+
+    if (local != null) {
+      await _apply(local.boards, local.cards, local.links, catalog);
+      final sync = AppServices.instance.sync;
+      if (sync.canSyncNow) unawaited(sync.sync());
+      return;
+    }
+
+    try {
+      await _downloadProfile(profileId, catalog);
+    } catch (error) {
+      // Sem rede e sem cache: mostra ao menos o catálogo ARASAAC.
+      await _apply(const [], const [], const [], catalog);
+      if (_isNetworkError(error)) {
+        throw const SocketException(
+          'Sem conexão: suas pranchas pessoais aparecem quando houver internet.',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  /// Recarrega do SQLite (chamado quando a sincronização trouxe novidades).
+  static Future<void> reloadFromLocal() async {
+    final profileId = _activeProfileId;
+    if (profileId == null) return;
+    final local = await _store.loadProfileContent(profileId);
+    if (local == null) return;
+    await _apply(local.boards, local.cards, local.links, await _buildCatalog());
+  }
+
+  static Future<void> _downloadProfile(
+    String profileId,
+    ({List<Map<String, dynamic>> boards, Map<String, List> cardsByBoard})?
+    catalog,
+  ) async {
     final preferences = await SharedPreferences.getInstance();
     final legacyStorageKey = _legacyStorageKey(profileId);
     final legacyContent = preferences.getString(legacyStorageKey);
-    var boardRows = await _client
-        .from('prancha')
-        .select()
-        .eq('perfil_id', profileId)
-        .order('ordem');
-    if (boardRows.isEmpty && legacyContent != null) {
-      await _client.rpc(
-        'inicializar_conteudo_padrao',
-        params: {
-          'novo_perfil_id': profileId,
-          'dados': _legacyContentPayload(legacyContent),
-        },
-      );
-    }
-    final catalogNeedsSync = await _client.rpc(
-      'catalogo_arasaac_completo_necessita_sync',
-      params: {'p_perfil_id': profileId, 'p_versao': _catalogVersion},
-    ) as bool;
-    if (catalogNeedsSync) {
-      await _client.rpc(
-        'sincronizar_catalogo_arasaac_completo',
-        params: {
-          'p_perfil_id': profileId,
-          'p_versao': _catalogVersion,
-          'p_dados': await _defaultContentPayload(),
-        },
-      );
-    }
-    boardRows = await _client
-        .from('prancha')
-        .select()
-        .eq('perfil_id', profileId)
-        .order('ordem');
 
-    final loadedBoards = await Future.wait(
-      boardRows.map(_mapBoardFromDatabase),
+    var remote = await _api.fetchProfileContent(profileId);
+    if (remote.boards.isEmpty && legacyContent != null) {
+      await _api.migrateLegacyContent(
+        profileId,
+        _legacyContentPayload(legacyContent),
+      );
+      remote = await _api.fetchProfileContent(profileId);
+    }
+    await _store.replaceProfileContent(
+      profileId,
+      boards: remote.boards,
+      cards: remote.cards,
+      links: remote.links,
     );
-    final boardIds = boardRows.map((board) => board['id'] as String).toList();
-    final loadedCards = <String, List>{};
-    for (final board in loadedBoards) {
-      loadedCards[board['key'] as String] = [];
-    }
-    if (boardIds.isNotEmpty) {
-      final associations = await _fetchAllAssociations(boardIds);
-      final cardIds = associations
-          .map((association) => association['cartao_id'] as String)
-          .toSet()
-          .toList();
-      if (cardIds.isNotEmpty) {
-        final cardRows = await _fetchAllCards(profileId, cardIds);
-        final cardById = {
-          for (final card in cardRows) card['id'] as String: card,
-        };
-        final boardKeyById = {
-          for (final board in loadedBoards) board['id']: board['key'],
-        };
-        for (final association in associations) {
-          final card = cardById[association['cartao_id']];
-          final boardKey = boardKeyById[association['prancha_id']];
-          if (card == null || boardKey == null) continue;
-          (loadedCards[boardKey] as List).add(
-            await _mapCardFromDatabase(
-              card,
-              boardKey,
-              association['ordem'] as int? ?? 0,
-            ),
-          );
-        }
-      }
-    }
-    boards = loadedBoards;
-    cardsByBoard = loadedCards;
-    if (boardRows.isNotEmpty && legacyContent != null) {
+    await _apply(remote.boards, remote.cards, remote.links, catalog);
+    if (remote.boards.isNotEmpty && legacyContent != null) {
       await preferences.remove(legacyStorageKey);
     }
   }
 
-  static Future<List<Map<String, dynamic>>> _fetchAllAssociations(
-    List<String> boardIds,
-  ) async {
-    const pageSize = 1000;
-    const boardIdBatchSize = 100;
-    final rows = <Map<String, dynamic>>[];
-    for (var start = 0; start < boardIds.length; start += boardIdBatchSize) {
-      final end = (start + boardIdBatchSize).clamp(0, boardIds.length);
-      final ids = boardIds.sublist(start, end);
-      var offset = 0;
-      while (true) {
-        final page = await _client
-            .from('prancha_cartao')
-            .select('prancha_id, cartao_id, ordem')
-            .inFilter('prancha_id', ids)
-            .order('prancha_id')
-            .order('ordem')
-            .range(offset, offset + pageSize - 1);
-        rows.addAll(List<Map<String, dynamic>>.from(page));
-        if (page.length < pageSize) break;
-        offset += pageSize;
-      }
-    }
-    return rows;
+  static Future<
+    ({List<Map<String, dynamic>> boards, Map<String, List> cardsByBoard})?
+  >
+  _buildCatalog() async {
+    final repository = _catalog;
+    if (repository == null) return null;
+    final data = await repository.load();
+    return repository.build(
+      catalog: data,
+      publicImageUrl: _api.catalogImageUrl,
+    );
   }
 
-  static Future<List<Map<String, dynamic>>> _fetchAllCards(
-    String profileId,
-    List<String> cardIds,
+  static Future<void> _apply(
+    List<Map<String, dynamic>> boardRows,
+    List<Map<String, dynamic>> cardRows,
+    List<Map<String, dynamic>> links,
+    ({List<Map<String, dynamic>> boards, Map<String, List> cardsByBoard})?
+    catalog,
   ) async {
-    const pageSize = 1000;
-    const idBatchSize = 500;
-    final rows = <Map<String, dynamic>>[];
-    for (var start = 0; start < cardIds.length; start += idBatchSize) {
-      final end = (start + idBatchSize).clamp(0, cardIds.length);
-      final ids = cardIds.sublist(start, end);
-      var offset = 0;
-      while (true) {
-        final page = await _client
-            .from('cartao')
-            .select()
-            .eq('perfil_id', profileId)
-            .inFilter('id', ids)
-            .range(offset, offset + pageSize - 1);
-        rows.addAll(List<Map<String, dynamic>>.from(page));
-        if (page.length < pageSize) break;
-        offset += pageSize;
-      }
+    final userBoards = await Future.wait(boardRows.map(_mapBoardFromDatabase));
+    final userCards = <String, List>{
+      for (final board in userBoards) board['key'] as String: [],
+    };
+    final cardById = {for (final card in cardRows) card['id'] as String: card};
+    final boardKeyById = {
+      for (final board in userBoards) board['id']: board['key'],
+    };
+    final sortedLinks = [...links]
+      ..sort(
+        (a, b) => (a['ordem'] as int? ?? 0).compareTo(b['ordem'] as int? ?? 0),
+      );
+    for (final link in sortedLinks) {
+      final card = cardById[link['cartao_id']];
+      final boardKey = boardKeyById[link['prancha_id']];
+      if (card == null || boardKey == null) continue;
+      (userCards[boardKey] as List).add(
+        await _mapCardFromDatabase(card, boardKey, link['ordem'] as int? ?? 0),
+      );
     }
-    return rows;
+
+    final userKeys = userBoards.map((b) => b['key']).toSet();
+    boards = [
+      ...userBoards,
+      ...?catalog?.boards.where((b) => !userKeys.contains(b['key'])),
+    ];
+    cardsByBoard = {
+      ...?catalog?.cardsByBoard,
+      ...userCards,
+    };
   }
 
   static Map<String, dynamic> _legacyContentPayload(String content) {
@@ -496,31 +581,12 @@ class HomeContentController {
     return null;
   }
 
-  static Future<Map<String, dynamic>> _defaultContentPayload() async {
-    final catalogJson = await rootBundle.loadString(
-      'assets/arasaac/catalogo_inicial.json',
-    );
-    final decoded = jsonDecode(catalogJson);
-    if (decoded is! Map<String, dynamic> ||
-        decoded['categories'] is! List ||
-        decoded['pictograms'] is! List ||
-        decoded['principalIds'] is! List ||
-        decoded['categories'].length != 610 ||
-        decoded['pictograms'].length != 13767) {
-      throw const FormatException('O catálogo inicial ARASAAC está inválido.');
-    }
-    return {
-      'categories': decoded['categories'],
-      'pictograms': decoded['pictograms'],
-      'principalIds': decoded['principalIds'],
-    };
-  }
-
   static Future<Map<String, dynamic>> _mapBoardFromDatabase(
     Map<String, dynamic> row,
   ) async {
     final storagePath = row['imagem_storage_path'] as String?;
     final isCatalogBoard = row['catalogo_arasaac'] as bool? ?? false;
+    final localImage = row['_local_image_path'] as String?;
     return {
       'id': row['id'],
       'key': row['chave'],
@@ -528,12 +594,12 @@ class HomeContentController {
       'icon': isCatalogBoard
           ? Icons.category
           : _getIconData(row['icone'] as String?),
-      'imagePath': await _resolveImagePath(
-        row['imagem_url'] as String?,
-        storagePath,
-      ),
+      'imagePath':
+          localImage ??
+          await _resolveImagePath(row['imagem_url'] as String?, storagePath),
       'imageStoragePath': storagePath,
       'audioPath': row['caminho_audio'],
+      'order': row['ordem'] as int? ?? 0,
       'catalogoArasaac': isCatalogBoard,
       'parentKey': row['catalogo_pai_chave'],
     };
@@ -547,6 +613,7 @@ class HomeContentController {
     final storagePath = row['imagem_storage_path'] as String?;
     final arasaacId = row['arasaac_id'] as String?;
     final imagePath = row['caminho_imagem'] as String?;
+    final localImage = row['_local_image_path'] as String?;
     return {
       'id': row['id'],
       'boardKey': boardKey,
@@ -554,10 +621,12 @@ class HomeContentController {
       'label': row['texto'],
       'color': _hexToColor(row['cor_hex'] as String?),
       'icon': _getIconData(row['icone'] as String?),
-      'imagePath': storagePath != null && storagePath.isNotEmpty
+      'imagePath': localImage != null
+          ? localImage
+          : storagePath != null && storagePath.isNotEmpty
           ? await _resolveImagePath(imagePath, storagePath)
           : arasaacId != null && imagePath == '$_catalogBucket/$arasaacId.png'
-          ? _client.storage.from(_catalogBucket).getPublicUrl('$arasaacId.png')
+          ? _api.catalogImageUrl(arasaacId)
           : imagePath,
       'imageStoragePath': storagePath,
       'audioPath': row['caminho_audio'],
@@ -565,14 +634,259 @@ class HomeContentController {
     };
   }
 
+  /// URL assinada das imagens privadas. Sem rede devolve null e o cartão
+  /// mostra o ícone (a assinatura exige uma requisição ao Storage).
   static Future<String?> _resolveImagePath(
     String? imageUrl,
     String? storagePath,
   ) async {
     if (storagePath == null || storagePath.isEmpty) return imageUrl;
-    return _client.storage
-        .from(_imageBucket)
-        .createSignedUrl(storagePath, _signedUrlLifetimeSeconds);
+    if (!_testing &&
+        AppServices.instance.sync.network == NetworkStatus.offline) {
+      return null;
+    }
+    try {
+      return await _api.signedImageUrl(storagePath).timeout(_imageTimeout);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Decisão online/offline
+  // ---------------------------------------------------------------------------
+
+  /// true: grava direto no Supabase. false: grava no SQLite e enfileira.
+  static Future<bool> _useRemote() async {
+    if (_testing) return true;
+    final sync = AppServices.instance.sync;
+    if (!sync.canSyncNow) return false;
+    if (sync.pending > 0) {
+      // Envia antes o que estava na fila, para manter a ordem das alterações.
+      await sync.sync();
+      return sync.pending == 0 && sync.canSyncNow;
+    }
+    return true;
+  }
+
+  static Future<void> _enqueue(
+    String tabela,
+    String operacao,
+    Map<String, dynamic> payload,
+  ) async {
+    await _store.enqueue(
+      OutboxOperation(
+        perfilId: _requireActiveProfile(),
+        tabela: tabela,
+        operacao: operacao,
+        payload: payload,
+      ),
+    );
+  }
+
+  static Future<void> _afterOfflineChange() async {
+    if (!_testing) await AppServices.instance.sync.onLocalChange();
+  }
+
+  static String _extensionFor(String contentType) => switch (contentType) {
+    'image/png' => 'png',
+    'image/webp' => 'webp',
+    'image/gif' => 'gif',
+    _ => 'jpg',
+  };
+
+  static void _validateImage(List<int> bytes, String contentType) {
+    if (!const {
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+    }.contains(contentType)) {
+      throw ArgumentError('Formato de imagem não suportado.');
+    }
+    if (bytes.isEmpty || bytes.length > 5 * 1024 * 1024) {
+      throw ArgumentError('A imagem deve ter entre 1 byte e 5 MB.');
+    }
+  }
+
+  /// Guarda a imagem escolhida offline até o próximo Wi-Fi.
+  static Future<String> _saveImageLocally(List<int> bytes, String ext) async {
+    final directory = await getApplicationDocumentsDirectory();
+    final folder = Directory('${directory.path}/pending_images');
+    await folder.create(recursive: true);
+    final file = File('${folder.path}/${generateUuidV4()}.$ext');
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pranchas
+  // ---------------------------------------------------------------------------
+
+  static Future<Map<String, dynamic>> saveBoard(
+    Map<String, dynamic> board, {
+    required bool isNew,
+  }) async {
+    final profileId = _requireActiveProfile();
+    var boardKey = (board['key'] as String? ?? '').trim();
+    final label = (board['label'] as String? ?? '').trim();
+    if (boardKey.isEmpty || label.isEmpty) {
+      throw ArgumentError('Nome e chave da tábua são obrigatórios.');
+    }
+
+    if (isNew) {
+      final baseKey = boardKey;
+      var suffix = 2;
+      while (boards.any((item) => item['key'] == boardKey)) {
+        boardKey = '$baseKey-$suffix';
+        suffix++;
+      }
+    }
+
+    final existingBoard = isNew
+        ? null
+        : boards.cast<Map>().firstWhere(
+            (item) => item['id'] == board['id'],
+            orElse: () =>
+                throw StateError('A tábua selecionada não existe mais.'),
+          );
+    final oldStoragePath = existingBoard?['imageStoragePath'] as String?;
+
+    if (!await _useRemote()) {
+      return _saveBoardOffline(
+        board,
+        profileId: profileId,
+        boardKey: isNew ? boardKey : existingBoard!['key'] as String,
+        label: label,
+        isNew: isNew,
+        existingBoard: existingBoard,
+      );
+    }
+
+    final uploadBytes = board['_imageBytes'];
+    final String? uploadedStoragePath;
+    if (uploadBytes is List<int>) {
+      uploadedStoragePath = await _uploadContentImage(
+        profileId,
+        uploadBytes,
+        board['_imageContentType'] as String? ?? 'image/jpeg',
+      );
+    } else {
+      uploadedStoragePath = null;
+    }
+
+    final storagePath =
+        uploadedStoragePath ?? board['imageStoragePath'] as String?;
+    final imagePath = uploadedStoragePath == null
+        ? board['imagePath'] as String?
+        : await _resolveImagePath(null, uploadedStoragePath);
+    final data = {
+      'perfil_id': profileId,
+      'chave': boardKey,
+      'nome': label,
+      'icone': _getIconName(board['icon'] as IconData?),
+      'imagem_url': storagePath == null ? imagePath : null,
+      'imagem_storage_path': storagePath,
+      'caminho_audio': board['audioPath'],
+    };
+
+    try {
+      final Map<String, dynamic> row;
+      if (isNew) {
+        row = await _api.insertBoard(data);
+      } else {
+        final id = board['id'];
+        if (id == null) {
+          throw ArgumentError('A tábua não tem um identificador.');
+        }
+        data.remove('perfil_id');
+        data.remove('chave');
+        row = await _api.updateBoard(id as String, profileId, data);
+      }
+      await _store.upsertBoard(row);
+
+      final savedBoard = await _mapBoardFromDatabase(row);
+      _putBoardInMemory(savedBoard);
+      if (oldStoragePath != null &&
+          oldStoragePath != storagePath &&
+          oldStoragePath != uploadedStoragePath) {
+        await _removeStoredImage(oldStoragePath);
+      }
+      return savedBoard;
+    } catch (_) {
+      if (uploadedStoragePath != null) {
+        await _removeStoredImage(uploadedStoragePath);
+      }
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> _saveBoardOffline(
+    Map<String, dynamic> board, {
+    required String profileId,
+    required String boardKey,
+    required String label,
+    required bool isNew,
+    required Map? existingBoard,
+  }) async {
+    final id = isNew ? generateUuidV4() : board['id'] as String;
+    String? storagePath = board['imageStoragePath'] as String?;
+    String? localImagePath;
+    final uploadBytes = board['_imageBytes'];
+    final contentType = board['_imageContentType'] as String? ?? 'image/jpeg';
+    if (uploadBytes is List<int>) {
+      _validateImage(uploadBytes, contentType);
+      final ext = _extensionFor(contentType);
+      localImagePath = await _saveImageLocally(uploadBytes, ext);
+      storagePath = '$profileId/${_newId()}.$ext';
+    }
+    final row = <String, dynamic>{
+      'id': id,
+      'perfil_id': profileId,
+      'chave': boardKey,
+      'nome': label,
+      'icone': _getIconName(board['icon'] as IconData?),
+      'imagem_url': storagePath == null ? board['imagePath'] as String? : null,
+      'imagem_storage_path': storagePath,
+      'caminho_audio': board['audioPath'],
+      'ordem': existingBoard?['order'] as int? ?? editableBoards.length,
+      'catalogo_arasaac': false,
+    };
+    await _store.upsertBoard({
+      ...row,
+      if (localImagePath != null) '_local_image_path': localImagePath,
+    });
+    await _enqueue('prancha', 'upsert', {
+      ...row,
+      if (localImagePath != null) '_local_image_path': localImagePath,
+      if (localImagePath != null) '_image_content_type': contentType,
+    });
+
+    final savedBoard = await _mapBoardFromDatabase({
+      ...row,
+      if (localImagePath != null) '_local_image_path': localImagePath,
+    });
+    if (localImagePath == null && storagePath != null) {
+      // Mantém a imagem que já aparecia (URL assinada anterior).
+      savedBoard['imagePath'] = existingBoard?['imagePath'];
+    }
+    _putBoardInMemory(savedBoard);
+    await _afterOfflineChange();
+    return savedBoard;
+  }
+
+  static void _putBoardInMemory(Map<String, dynamic> savedBoard) {
+    final nextBoards = _copyBoards();
+    final index = nextBoards.indexWhere(
+      (item) => item['id'] == savedBoard['id'],
+    );
+    if (index < 0) {
+      nextBoards.add(savedBoard);
+      cardsByBoard.putIfAbsent(savedBoard['key'] as String, () => []);
+    } else {
+      nextBoards[index] = savedBoard;
+    }
+    boards = nextBoards;
   }
 
   static Future<void> deleteBoard(String key) async {
@@ -581,27 +895,41 @@ class HomeContentController {
       (item) => item['key'] == key,
       orElse: () => throw StateError('A tábua selecionada não existe mais.'),
     );
+    if (board['catalogoArasaac'] == true) {
+      throw StateError('As pranchas do catálogo ARASAAC não podem ser excluídas.');
+    }
     final boardId = board['id'] as String;
-    final associations = await _client
-        .from('prancha_cartao')
-        .select('cartao_id')
-        .eq('prancha_id', boardId);
-    final cardIds = associations
-        .map((association) => association['cartao_id'] as String)
-        .toSet()
-        .toList();
-    await _client.from('prancha_cartao').delete().eq('prancha_id', boardId);
     final boardImagePath = board['imageStoragePath'] as String?;
-    await _client
-        .from('prancha')
-        .delete()
-        .eq('id', boardId)
-        .eq('perfil_id', profileId);
+
+    if (!await _useRemote()) {
+      final cardIds = <String>{
+        for (final card in cardsByBoard[key] ?? const []) card['id'] as String,
+      };
+      await _store.deleteBoard(boardId);
+      await _enqueue('prancha', 'delete', {
+        'id': boardId,
+        'imagem_storage_path': boardImagePath,
+      });
+      boards = _copyBoards()..removeWhere((item) => item['id'] == boardId);
+      cardsByBoard.remove(key);
+      await _deleteOrphansOffline(cardIds);
+      await _afterOfflineChange();
+      return;
+    }
+
+    final cardIds = await _api.fetchLinkedCardIds(boardId);
+    await _api.deleteLinksOfBoard(boardId);
+    await _api.deleteBoard(boardId, profileId);
+    await _store.deleteBoard(boardId);
     boards = _copyBoards()..removeWhere((item) => item['id'] == boardId);
     cardsByBoard.remove(key);
     await _deleteUnlinkedCards(cardIds, profileId);
     if (boardImagePath != null) await _removeStoredImage(boardImagePath);
   }
+
+  // ---------------------------------------------------------------------------
+  // Cartões
+  // ---------------------------------------------------------------------------
 
   static Future<Map<String, dynamic>> saveCard(
     Map<String, dynamic> card,
@@ -614,6 +942,9 @@ class HomeContentController {
       orElse: () =>
           throw StateError('Selecione uma tábua válida para o cartão.'),
     );
+    if (board['catalogoArasaac'] == true) {
+      throw StateError('Escolha uma prancha criada por você para o cartão.');
+    }
     final label = (card['label'] as String? ?? '').trim();
     if (label.isEmpty) throw ArgumentError('O nome do cartão é obrigatório.');
 
@@ -632,6 +963,21 @@ class HomeContentController {
         throw StateError('O cartão selecionado não existe mais.');
       }
     }
+    final order =
+        card['order'] as int? ?? (cardsByBoard[boardKey]?.length ?? 0);
+
+    if (!await _useRemote()) {
+      return _saveCardOffline(
+        card,
+        profileId: profileId,
+        board: board,
+        boardKey: boardKey,
+        label: label,
+        order: order,
+        existing: existing,
+      );
+    }
+
     final oldStoragePath = existing?['imageStoragePath'] as String?;
     final uploadBytes = card['_imageBytes'];
     final String? uploadedStoragePath;
@@ -660,90 +1006,58 @@ class HomeContentController {
       'caminho_audio': card['audioPath'],
       'arasaac_id': card['arasaacId'],
     };
-    final order =
-        card['order'] as int? ?? (cardsByBoard[boardKey]?.length ?? 0);
     String? insertedCardId;
     try {
       final Map<String, dynamic> row;
       if (isNew) {
-        row = await _client.from('cartao').insert(data).select().single();
+        row = await _api.insertCard(data);
         insertedCardId = row['id'] as String;
-        await _client.from('prancha_cartao').insert({
+        await _api.insertLink({
+          'prancha_id': board['id'],
+          'cartao_id': insertedCardId,
+          'ordem': order,
+        });
+        await _store.upsertLink({
           'prancha_id': board['id'],
           'cartao_id': insertedCardId,
           'ordem': order,
         });
       } else {
-        row = await _client
-            .from('cartao')
-            .update(data)
-            .eq('id', card['id'])
-            .eq('perfil_id', profileId)
-            .select()
-            .single();
+        row = await _api.updateCard(card['id'] as String, profileId, data);
         final previousBoardKey = existing!['boardKey'] as String;
         if (previousBoardKey != boardKey) {
-          final targetAssociation = await _client
-              .from('prancha_cartao')
-              .select('cartao_id')
-              .eq('prancha_id', board['id'])
-              .eq('cartao_id', card['id'])
-              .maybeSingle();
-          if (targetAssociation == null) {
-            await _client.from('prancha_cartao').insert({
+          if (!await _api.linkExists(board['id'] as String, card['id'] as String)) {
+            await _api.insertLink({
               'prancha_id': board['id'],
               'cartao_id': card['id'],
               'ordem': order,
             });
           }
-          await _client
-              .from('prancha_cartao')
-              .delete()
-              .eq('prancha_id', _boardIdForKey(previousBoardKey))
-              .eq('cartao_id', card['id']);
+          final previousBoardId = _boardIdForKey(previousBoardKey);
+          await _api.deleteLink(previousBoardId, card['id'] as String);
+          await _store.deleteLink(previousBoardId, card['id'] as String);
         } else {
-          await _client
-              .from('prancha_cartao')
-              .update({'ordem': order})
-              .eq('prancha_id', board['id'])
-              .eq('cartao_id', card['id']);
+          await _api.updateLinkOrder(
+            board['id'] as String,
+            card['id'] as String,
+            order,
+          );
         }
+        await _store.upsertLink({
+          'prancha_id': board['id'],
+          'cartao_id': card['id'],
+          'ordem': order,
+        });
       }
+      await _store.upsertCard(row);
 
       final savedCard = await _mapCardFromDatabase(row, boardKey, order);
-      final nextCards = _copyCardsByBoard();
-      final previousBoardKey = isNew ? null : existing!['boardKey'] as String;
-      for (final entry in nextCards.entries) {
-        final matchingCards = entry.value
-            .where((item) => item['id'] == savedCard['id'])
-            .toList();
-        if (entry.key == boardKey) {
-          final cardOrder = matchingCards.isEmpty
-              ? order
-              : matchingCards.first['order'] as int? ?? order;
-          entry.value.removeWhere((item) => item['id'] == savedCard['id']);
-          entry.value.add({
-            ...savedCard,
-            'boardKey': entry.key,
-            'order': cardOrder,
-          });
-        } else if (previousBoardKey != boardKey &&
-            entry.key == previousBoardKey) {
-          entry.value.removeWhere((item) => item['id'] == savedCard['id']);
-        } else if (matchingCards.isNotEmpty) {
-          final cardOrder = matchingCards.first['order'] as int? ?? 0;
-          entry.value
-            ..removeWhere((item) => item['id'] == savedCard['id'])
-            ..add({...savedCard, 'boardKey': entry.key, 'order': cardOrder});
-        }
-      }
-      final boardCards = nextCards.putIfAbsent(boardKey, () => []);
-      boardCards.sort(
-        (first, second) => (first['order'] as int? ?? 0).compareTo(
-          second['order'] as int? ?? 0,
-        ),
+      _putCardInMemory(
+        savedCard,
+        boardKey: boardKey,
+        order: order,
+        previousBoardKey: isNew ? null : existing!['boardKey'] as String,
       );
-      cardsByBoard = nextCards;
       if (oldStoragePath != null &&
           oldStoragePath != storagePath &&
           oldStoragePath != uploadedStoragePath) {
@@ -752,17 +1066,128 @@ class HomeContentController {
       return savedCard;
     } catch (_) {
       if (insertedCardId != null) {
-        await _client
-            .from('cartao')
-            .delete()
-            .eq('id', insertedCardId)
-            .eq('perfil_id', profileId);
+        await _api.deleteCard(insertedCardId, profileId);
       }
       if (uploadedStoragePath != null) {
         await _removeStoredImage(uploadedStoragePath);
       }
       rethrow;
     }
+  }
+
+  static Future<Map<String, dynamic>> _saveCardOffline(
+    Map<String, dynamic> card, {
+    required String profileId,
+    required Map board,
+    required String boardKey,
+    required String label,
+    required int order,
+    required Map? existing,
+  }) async {
+    final isNew = existing == null;
+    final id = isNew ? generateUuidV4() : card['id'] as String;
+    String? storagePath = card['imageStoragePath'] as String?;
+    String? localImagePath;
+    final uploadBytes = card['_imageBytes'];
+    final contentType = card['_imageContentType'] as String? ?? 'image/jpeg';
+    if (uploadBytes is List<int>) {
+      _validateImage(uploadBytes, contentType);
+      final ext = _extensionFor(contentType);
+      localImagePath = await _saveImageLocally(uploadBytes, ext);
+      storagePath = '$profileId/${_newId()}.$ext';
+    }
+    final row = <String, dynamic>{
+      'id': id,
+      'perfil_id': profileId,
+      'texto': label,
+      'cor_hex': _colorToHex(card['color'] as Color? ?? Colors.teal),
+      'icone': _getIconName(card['icon'] as IconData?),
+      'caminho_imagem': storagePath == null ? card['imagePath'] as String? : null,
+      'imagem_storage_path': storagePath,
+      'caminho_audio': card['audioPath'],
+      'arasaac_id': card['arasaacId'],
+    };
+    final link = {'prancha_id': board['id'], 'cartao_id': id, 'ordem': order};
+
+    await _store.upsertCard({
+      ...row,
+      if (localImagePath != null) '_local_image_path': localImagePath,
+    });
+    await _enqueue('cartao', 'upsert', {
+      ...row,
+      if (localImagePath != null) '_local_image_path': localImagePath,
+      if (localImagePath != null) '_image_content_type': contentType,
+    });
+    await _store.upsertLink(link);
+    await _enqueue('prancha_cartao', 'upsert', link);
+
+    final previousBoardKey = existing?['boardKey'] as String?;
+    if (previousBoardKey != null && previousBoardKey != boardKey) {
+      final previousBoardId = _boardIdForKey(previousBoardKey);
+      await _store.deleteLink(previousBoardId, id);
+      await _enqueue('prancha_cartao', 'delete', {
+        'prancha_id': previousBoardId,
+        'cartao_id': id,
+      });
+    }
+
+    final savedCard = await _mapCardFromDatabase(
+      {...row, if (localImagePath != null) '_local_image_path': localImagePath},
+      boardKey,
+      order,
+    );
+    if (localImagePath == null && storagePath != null) {
+      savedCard['imagePath'] = existing?['imagePath'];
+    }
+    _putCardInMemory(
+      savedCard,
+      boardKey: boardKey,
+      order: order,
+      previousBoardKey: previousBoardKey,
+    );
+    await _afterOfflineChange();
+    return savedCard;
+  }
+
+  /// Atualiza a lista em memória depois de salvar (o mesmo cartão pode estar
+  /// em mais de uma prancha – relação N:N).
+  static void _putCardInMemory(
+    Map<String, dynamic> savedCard, {
+    required String boardKey,
+    required int order,
+    required String? previousBoardKey,
+  }) {
+    final nextCards = _copyCardsByBoard();
+    for (final entry in nextCards.entries) {
+      final matchingCards = entry.value
+          .where((item) => item['id'] == savedCard['id'])
+          .toList();
+      if (entry.key == boardKey) {
+        final cardOrder = matchingCards.isEmpty
+            ? order
+            : matchingCards.first['order'] as int? ?? order;
+        entry.value.removeWhere((item) => item['id'] == savedCard['id']);
+        entry.value.add({...savedCard, 'boardKey': entry.key, 'order': cardOrder});
+      } else if (previousBoardKey != null &&
+          previousBoardKey != boardKey &&
+          entry.key == previousBoardKey) {
+        entry.value.removeWhere((item) => item['id'] == savedCard['id']);
+      } else if (matchingCards.isNotEmpty) {
+        final cardOrder = matchingCards.first['order'] as int? ?? 0;
+        entry.value
+          ..removeWhere((item) => item['id'] == savedCard['id'])
+          ..add({...savedCard, 'boardKey': entry.key, 'order': cardOrder});
+      }
+    }
+    final boardCards = nextCards.putIfAbsent(boardKey, () => []);
+    if (!boardCards.any((item) => item['id'] == savedCard['id'])) {
+      boardCards.add({...savedCard, 'boardKey': boardKey, 'order': order});
+    }
+    boardCards.sort(
+      (first, second) =>
+          (first['order'] as int? ?? 0).compareTo(second['order'] as int? ?? 0),
+    );
+    cardsByBoard = nextCards;
   }
 
   static Future<void> deleteCard(Map<String, dynamic> card) async {
@@ -773,13 +1198,40 @@ class HomeContentController {
     if (boardKey == null) {
       throw ArgumentError('O cartão não está associado a uma tábua.');
     }
-    await _client
-        .from('prancha_cartao')
-        .delete()
-        .eq('prancha_id', _boardIdForKey(boardKey))
-        .eq('cartao_id', id);
-    cardsByBoard[boardKey]?.removeWhere((item) => item['id'] == id);
-    await _deleteUnlinkedCards([id as String], profileId);
+    final boardId = _boardIdForKey(boardKey);
+    final cardId = id as String;
+
+    if (!await _useRemote()) {
+      await _store.deleteLink(boardId, cardId);
+      await _enqueue('prancha_cartao', 'delete', {
+        'prancha_id': boardId,
+        'cartao_id': cardId,
+      });
+      cardsByBoard[boardKey]?.removeWhere((item) => item['id'] == cardId);
+      await _deleteOrphansOffline(<String>{cardId});
+      await _afterOfflineChange();
+      return;
+    }
+
+    await _api.deleteLink(boardId, cardId);
+    await _store.deleteLink(boardId, cardId);
+    cardsByBoard[boardKey]?.removeWhere((item) => item['id'] == cardId);
+    await _deleteUnlinkedCards([cardId], profileId);
+  }
+
+  /// Offline: exclui os cartões que não estão em mais nenhuma prancha.
+  static Future<void> _deleteOrphansOffline(Set<String> cardIds) async {
+    for (final cardId in cardIds) {
+      Map? stillUsed;
+      for (final items in cardsByBoard.values) {
+        for (final item in items) {
+          if (item['id'] == cardId) stillUsed = item;
+        }
+      }
+      if (stillUsed != null) continue;
+      await _store.deleteCard(cardId);
+      await _enqueue('cartao', 'delete', {'id': cardId});
+    }
   }
 
   static Future<void> _deleteUnlinkedCards(
@@ -787,37 +1239,36 @@ class HomeContentController {
     String profileId,
   ) async {
     if (cardIds.isEmpty) return;
-    final remainingAssociations = await _client
-        .from('prancha_cartao')
-        .select('cartao_id')
-        .inFilter('cartao_id', cardIds);
-    final stillUsedIds = remainingAssociations
-        .map((association) => association['cartao_id'] as String)
-        .toSet();
+    final stillUsedIds = await _api.fetchCardIdsStillLinked(cardIds);
     final orphanedIds = cardIds
         .where((cardId) => !stillUsedIds.contains(cardId))
         .toList();
     if (orphanedIds.isEmpty) return;
 
-    final orphanedCards = await _client
-        .from('cartao')
-        .select('id, imagem_storage_path')
-        .eq('perfil_id', profileId)
-        .inFilter('id', orphanedIds);
-    await _client
-        .from('cartao')
-        .delete()
-        .eq('perfil_id', profileId)
-        .inFilter('id', orphanedIds);
-    await _removeStoredImages(orphanedCards);
+    final orphanedCards = await _api.fetchCardImagePaths(profileId, orphanedIds);
+    await _api.deleteCards(orphanedIds, profileId);
+    for (final cardId in orphanedIds) {
+      await _store.deleteCard(cardId);
+    }
+    await _api.removeImages(
+      orphanedCards
+          .map((row) => row['imagem_storage_path'] as String?)
+          .whereType<String>()
+          .where((path) => path.isNotEmpty)
+          .toList(),
+    );
   }
+
+  // ---------------------------------------------------------------------------
+  // Utilitários
+  // ---------------------------------------------------------------------------
 
   static String _requireActiveProfile() {
     final profileId = _activeProfileId;
     if (profileId == null) {
       throw StateError('Carregue um perfil antes de alterar o conteúdo.');
     }
-    if (clientForTesting == null && _client.auth.currentUser == null) {
+    if (!_testing && _client.auth.currentUser == null) {
       throw const AuthException(
         'Entre na sua conta para alterar tábuas e cartões.',
       );
@@ -838,150 +1289,28 @@ class HomeContentController {
     List<int> bytes,
     String contentType,
   ) async {
-    if (!const {
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'image/gif',
-    }.contains(contentType)) {
-      throw ArgumentError('Formato de imagem não suportado.');
-    }
-    if (bytes.isEmpty || bytes.length > 5 * 1024 * 1024) {
-      throw ArgumentError('A imagem deve ter entre 1 byte e 5 MB.');
-    }
-    final extension = switch (contentType) {
-      'image/png' => 'png',
-      'image/webp' => 'webp',
-      'image/gif' => 'gif',
-      _ => 'jpg',
-    };
-    final path = '$profileId/${_newId()}.$extension';
-    await _client.storage
-        .from(_imageBucket)
-        .uploadBinary(
-          path,
-          Uint8List.fromList(bytes),
-          fileOptions: FileOptions(contentType: contentType, upsert: false),
-        );
+    _validateImage(bytes, contentType);
+    final path = '$profileId/${_newId()}.${_extensionFor(contentType)}';
+    await _api.uploadImage(path, bytes, contentType);
     return path;
   }
 
-  static Future<void> _removeStoredImages(List<dynamic> rows) async {
-    final paths = rows
-        .map((row) => row['imagem_storage_path'] as String?)
-        .whereType<String>()
-        .where((path) => path.isNotEmpty)
-        .toList();
-    if (paths.isNotEmpty) {
-      await _client.storage.from(_imageBucket).remove(paths);
-    }
+  static Future<void> _removeStoredImage(String path) =>
+      _api.removeImages([path]);
+
+  static bool _isNetworkError(Object error) {
+    if (error is SocketException) return true;
+    final text = '${error.runtimeType} $error'.toLowerCase();
+    return text.contains('socketexception') ||
+        text.contains('clientexception') ||
+        text.contains('retryable') ||
+        text.contains('failed host lookup') ||
+        text.contains('timeoutexception') ||
+        text.contains('connection refused') ||
+        text.contains('network is unreachable');
   }
 
-  static Future<void> _removeStoredImage(String path) async {
-    await _client.storage.from(_imageBucket).remove([path]);
-  }
-
-  static Future<Map<String, dynamic>> saveBoard(
-    Map<String, dynamic> board, {
-    required bool isNew,
-  }) async {
-    final profileId = _requireActiveProfile();
-    var boardKey = (board['key'] as String? ?? '').trim();
-    final label = (board['label'] as String? ?? '').trim();
-    if (boardKey.isEmpty || label.isEmpty) {
-      throw ArgumentError('Nome e chave da tábua são obrigatórios.');
-    }
-
-    if (isNew) {
-      final baseKey = boardKey;
-      var suffix = 2;
-      while (boards.any((item) => item['key'] == boardKey)) {
-        boardKey = '$baseKey-$suffix';
-        suffix++;
-      }
-    }
-
-    final oldStoragePath = isNew
-        ? null
-        : boards.cast<Map>().firstWhere(
-                (item) => item['id'] == board['id'],
-                orElse: () =>
-                    throw StateError('A tábua selecionada não existe mais.'),
-              )['imageStoragePath']
-              as String?;
-    final uploadBytes = board['_imageBytes'];
-    final String? uploadedStoragePath;
-    if (uploadBytes is List<int>) {
-      uploadedStoragePath = await _uploadContentImage(
-        profileId,
-        uploadBytes,
-        board['_imageContentType'] as String? ?? 'image/jpeg',
-      );
-    } else {
-      uploadedStoragePath = null;
-    }
-
-    final storagePath =
-        uploadedStoragePath ?? board['imageStoragePath'] as String?;
-    final imagePath = uploadedStoragePath == null
-        ? board['imagePath'] as String?
-        : await _resolveImagePath(null, uploadedStoragePath);
-    final data = {
-      'perfil_id': profileId,
-      'chave': boardKey,
-      'nome': label,
-      'icone': _getIconName(board['icon'] as IconData?),
-      'imagem_url': storagePath == null ? imagePath : null,
-      'imagem_storage_path': storagePath,
-      'caminho_audio': board['audioPath'],
-    };
-    if (isNew) {
-      data['chave'] = boardKey;
-    }
-
-    try {
-      final Map<String, dynamic> row;
-      if (isNew) {
-        row = await _client.from('prancha').insert(data).select().single();
-      } else {
-        final id = board['id'];
-        if (id == null) {
-          throw ArgumentError('A tábua não tem um identificador.');
-        }
-        data.remove('perfil_id');
-        data.remove('chave');
-        row = await _client
-            .from('prancha')
-            .update(data)
-            .eq('id', id)
-            .eq('perfil_id', profileId)
-            .select()
-            .single();
-      }
-
-      final savedBoard = await _mapBoardFromDatabase(row);
-      final nextBoards = _copyBoards();
-      final index = nextBoards.indexWhere(
-        (item) => item['id'] == savedBoard['id'],
-      );
-      if (index < 0) {
-        nextBoards.add(savedBoard);
-        cardsByBoard.putIfAbsent(savedBoard['key'] as String, () => []);
-      } else {
-        nextBoards[index] = savedBoard;
-      }
-      boards = nextBoards;
-      if (oldStoragePath != null &&
-          oldStoragePath != storagePath &&
-          oldStoragePath != uploadedStoragePath) {
-        await _removeStoredImage(oldStoragePath);
-      }
-      return savedBoard;
-    } catch (_) {
-      if (uploadedStoragePath != null) {
-        await _removeStoredImage(uploadedStoragePath);
-      }
-      rethrow;
-    }
-  }
+  /// Usado só pelos testes para inspecionar a fila offline.
+  @visibleForTesting
+  static LocalContentStore get storeForTesting => _store;
 }

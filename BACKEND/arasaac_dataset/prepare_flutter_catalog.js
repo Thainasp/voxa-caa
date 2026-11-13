@@ -62,6 +62,31 @@ const principalWords = [
   'triste',
 ];
 
+// Classe gramatical para a chave de cores Fitzgerald (RF03), derivada das
+// tags do ARASAAC. A ordem das regras importa (ex.: "sim" e "não" vêm com a
+// tag "verb", mas na CAA são palavras sociais).
+const SOCIAL_WORDS = new Set([
+  'sim', 'não', 'oi', 'olá', 'tchau', 'obrigado', 'obrigada', 'por favor',
+  'desculpa', 'bom dia', 'boa tarde', 'boa noite',
+]);
+const DESCRIPTOR_WORDS = new Set([
+  'mais', 'menos', 'muito', 'pouco', 'grande', 'pequeno',
+]);
+function fitzgerald(pictogram) {
+  const tags = new Set([...(pictogram.tags ?? []), ...(pictogram.categorias ?? [])]);
+  const word = pictogram.palavra.trim().toLocaleLowerCase('pt-BR');
+  const hasAny = (...names) => names.some((name) => tags.has(name));
+  if (DESCRIPTOR_WORDS.has(word)) return 'descritor';
+  if (SOCIAL_WORDS.has(word) ||
+      hasAny('polite set expression', 'expression', 'interjection')) return 'social';
+  if (hasAny('interrogative pronoun', 'preposition', 'article', 'conjunction')) return 'estrutural';
+  if (hasAny('personal pronoun', 'pronoun')) return 'pessoa';
+  if (tags.has('verb')) return 'verbo';
+  if (hasAny('adjective', 'qualifying adjective', 'adverb', 'feeling', 'emotion', 'color')) return 'descritor';
+  if (hasAny('person', 'family')) return 'pessoa';
+  return 'substantivo';
+}
+
 const catalogPictograms = Object.values(pictograms)
   .filter((pictogram) =>
     categories.some((category) =>
@@ -71,6 +96,7 @@ const catalogPictograms = Object.values(pictograms)
   .map((pictogram) => ({
     id: String(pictogram.id),
     label: pictogram.palavra,
+    fitz: fitzgerald(pictogram),
   }));
 const availableIds = new Set(catalogPictograms.map((pictogram) => pictogram.id));
 const principalIds = principalWords.map(findPictogram);
@@ -81,7 +107,7 @@ for (const id of principalIds) {
 }
 
 const manifest = {
-  version: 'arasaac-2026-11-full-v2',
+  version: 'arasaac-2026-11-full-v3',
   source: source.fonte,
   license: source.licenca,
   principalIds,

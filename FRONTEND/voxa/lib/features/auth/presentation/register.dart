@@ -37,6 +37,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
+  /// RN-03: o responsável que cria a conta precisa ter 18 anos ou mais.
+  String? _validateAdult(String value) {
+    final parts = value.split('/').map((p) => p.trim()).toList();
+    if (parts.length != 3) return 'Data inválida';
+    final day = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final year = int.tryParse(parts[2]);
+    if (day == null || month == null || year == null) return 'Data inválida';
+    final birth = DateTime(year, month, day);
+    if (birth.day != day || birth.month != month) return 'Data inválida';
+    final now = DateTime.now();
+    if (birth.isAfter(now)) return 'Data no futuro';
+    var age = now.year - birth.year;
+    if (now.month < birth.month ||
+        (now.month == birth.month && now.day < birth.day)) {
+      age--;
+    }
+    if (age < 18) return 'O responsável precisa ter 18 anos ou mais';
+    return null;
+  }
+
   String _formatDateToIso(String dateStr) {
     final parts = dateStr.trim().split('/');
     if (parts.length == 3) {
@@ -148,7 +169,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    final emailRegex = RegExp(r'^[\w.+\-]+@([\w\-]+\.)+[A-Za-z]{2,}$');
 
     return Scaffold(
       backgroundColor: AppColors.contentBackground,
@@ -244,7 +265,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         if (value.length < 10) {
                           return 'Formato incompleto (DD/MM/YYYY)';
                         }
-                        return null;
+                        return _validateAdult(value);
                       },
                     ),
                     CustomTextField(
@@ -253,8 +274,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       controller: _passwordController,
                       isPassword: true,
                       validator: (value) {
-                        if (value == null || value.length < 6) {
-                          return 'A senha deve conter no mínimo 6 dígitos';
+                        // RN-03: senha com no mínimo 8 caracteres.
+                        if (value == null || value.length < 8) {
+                          return 'A senha deve conter no mínimo 8 caracteres';
                         }
                         return null;
                       },

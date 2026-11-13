@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Os ícones de notificação são referenciados pelo nome a partir do Dart
+     (flutter_local_notifications). Isto impede que o encolhimento de recursos
+     do build de release os remova. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_voxa_sync,@drawable/ic_stat_voxa_done,@drawable/voxa_notification_logo" />

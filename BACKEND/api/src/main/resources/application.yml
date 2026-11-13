@@ -1,0 +1,68 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: voxa-api
+  profiles:
+    # dev = H2 em memória com dados de exemplo (demonstração e testes no Postman)
+    # supabase = PostgreSQL do Supabase (mesmas tabelas usadas pelo app)
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  jackson:
+    default-property-inclusion: non_null
+  jpa:
+    open-in-view: false
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+voxa:
+  sms:
+    # log = SMS simulado (registrado no console). twilio = envio real.
+    provider: ${VOXA_SMS_PROVIDER:log}
+    twilio:
+      account-sid: ${TWILIO_ACCOUNT_SID:}
+      auth-token: ${TWILIO_AUTH_TOKEN:}
+      from-number: ${TWILIO_FROM_NUMBER:}
+  cors:
+    allowed-origins: ${VOXA_CORS_ORIGINS:*}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  datasource:
+    url: jdbc:h2:mem:voxa;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    defer-datasource-initialization: true
+  sql:
+    init:
+      mode: always
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+---
+spring:
+  config:
+    activate:
+      on-profile: supabase
+  datasource:
+    # Supabase > Project Settings > Database > Connection string (JDBC)
+    url: ${SUPABASE_DB_URL}
+    username: ${SUPABASE_DB_USER:postgres}
+    password: ${SUPABASE_DB_PASSWORD}
+  jpa:
+    hibernate:
+      # As tabelas já existem no Supabase (supabase_content.sql + voxa_migracao_v2.sql).
+      ddl-auto: none
+  sql:
+    init:
+      mode: never
