@@ -1,0 +1,1405 @@
+{
+  "info": {
+    "name": "Voxa API (BRADWBK)",
+    "description": "Testes funcionais da API REST do Voxa. Rode com o perfil dev (H2 com dados de exemplo) e execute a coleção na ordem (Run collection).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base",
+      "value": "http://localhost:8080/api/v1"
+    },
+    {
+      "key": "usuarioId",
+      "value": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "key": "perfilId",
+      "value": "22222222-2222-4222-8222-222222222222"
+    },
+    {
+      "key": "pranchaId",
+      "value": "33333333-3333-4333-8333-333333333331"
+    },
+    {
+      "key": "cartaoId",
+      "value": "44444444-4444-4444-8444-444444444443"
+    },
+    {
+      "key": "novoUsuarioId",
+      "value": ""
+    },
+    {
+      "key": "novoPerfilId",
+      "value": ""
+    },
+    {
+      "key": "novaPranchaId",
+      "value": ""
+    },
+    {
+      "key": "novoCartaoId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Usuários (entidade 1)",
+      "item": [
+        {
+          "name": "Criar usuário",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('novoUsuarioId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/usuarios",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "usuarios"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Mariane Silva\",\n  \"email\": \"mariane@voxa.app\",\n  \"telefone\": \"(11) 98888-0000\",\n  \"dataNascimento\": \"1999-06-15\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Criar usuário – e-mail duplicado (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/usuarios",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "usuarios"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Outra\",\n  \"email\": \"thaina@voxa.app\",\n  \"dataNascimento\": \"1990-01-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Criar usuário – menor de idade (422)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/usuarios",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "usuarios"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Ana\",\n  \"email\": \"ana@voxa.app\",\n  \"dataNascimento\": \"2015-01-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Criar usuário – corpo inválido (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/usuarios",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "usuarios"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"\",\n  \"email\": \"invalido\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Listar usuários",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/usuarios",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "usuarios"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Buscar usuário",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/usuarios/{{usuarioId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "usuarios",
+                "{{usuarioId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Buscar usuário inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/usuarios/00000000-0000-4000-8000-000000000000",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "usuarios",
+                "00000000-0000-4000-8000-000000000000"
+              ]
+            }
+          }
+        },
+        {
+          "name": "1:N – perfis do usuário",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('retorna lista', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/usuarios/{{usuarioId}}/perfis",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "usuarios",
+                "{{usuarioId}}",
+                "perfis"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Atualizar usuário",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/usuarios/{{novoUsuarioId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "usuarios",
+                "{{novoUsuarioId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Mariane F. Silva\",\n  \"email\": \"mariane@voxa.app\",\n  \"telefone\": \"(11) 97777-0000\",\n  \"dataNascimento\": \"1999-06-15\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Excluir usuário",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/usuarios/{{novoUsuarioId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "usuarios",
+                "{{novoUsuarioId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Perfis (entidade 2)",
+      "item": [
+        {
+          "name": "Criar perfil dependente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('novoPerfilId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/perfis",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "perfis"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuarioId\": \"{{usuarioId}}\",\n  \"nome\": \"Bia\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Criar 2º responsável (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/perfis",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "perfis"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"usuarioId\": \"{{usuarioId}}\",\n  \"nome\": \"Outro\",\n  \"responsavel\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Listar perfis do usuário",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/perfis?usuarioId={{usuarioId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "perfis"
+              ],
+              "query": [
+                {
+                  "key": "usuarioId",
+                  "value": "{{usuarioId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Buscar perfil",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/perfis/{{novoPerfilId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "perfis",
+                "{{novoPerfilId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Atualizar perfil",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/perfis/{{novoPerfilId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "perfis",
+                "{{novoPerfilId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Beatriz\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Excluir perfil responsável (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/perfis/22222222-2222-4222-8222-222222222221",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "perfis",
+                "22222222-2222-4222-8222-222222222221"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Excluir perfil dependente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/perfis/{{novoPerfilId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "perfis",
+                "{{novoPerfilId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Pranchas (entidade 3)",
+      "item": [
+        {
+          "name": "Criar prancha",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('novaPranchaId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/pranchas",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "pranchas"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"perfilId\": \"{{perfilId}}\",\n  \"chave\": \"escola\",\n  \"nome\": \"Escola\",\n  \"icone\": \"school\",\n  \"ordem\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Criar prancha – chave duplicada (409)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/pranchas",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "pranchas"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"perfilId\": \"{{perfilId}}\",\n  \"chave\": \"rotina\",\n  \"nome\": \"Rotina 2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Listar pranchas do perfil",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/pranchas?perfilId={{perfilId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "pranchas"
+              ],
+              "query": [
+                {
+                  "key": "perfilId",
+                  "value": "{{perfilId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Buscar prancha com cartões",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('tem cartões em ordem', () => pm.expect(pm.response.json().cartoes.length).to.be.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/pranchas/{{pranchaId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "pranchas",
+                "{{pranchaId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Atualizar prancha",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/pranchas/{{novaPranchaId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "pranchas",
+                "{{novaPranchaId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"perfilId\": \"{{perfilId}}\",\n  \"chave\": \"escola\",\n  \"nome\": \"Escola e Amigos\",\n  \"icone\": \"school\",\n  \"ordem\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Excluir prancha",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/pranchas/{{novaPranchaId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "pranchas",
+                "{{novaPranchaId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Cartões (entidade 4)",
+      "item": [
+        {
+          "name": "Criar cartão",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) pm.collectionVariables.set('novoCartaoId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/cartoes",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "cartoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"perfilId\": \"{{perfilId}}\",\n  \"texto\": \"Brincar\",\n  \"corHex\": \"#ff2e9e4f\",\n  \"icone\": \"toys\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Criar cartão – cor inválida (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/cartoes",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "cartoes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"perfilId\": \"{{perfilId}}\",\n  \"texto\": \"X\",\n  \"corHex\": \"verde\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Listar/buscar cartões (RF06)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/cartoes?perfilId={{perfilId}}&busca=qu",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "cartoes"
+              ],
+              "query": [
+                {
+                  "key": "perfilId",
+                  "value": "{{perfilId}}"
+                },
+                {
+                  "key": "busca",
+                  "value": "qu"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Buscar cartão",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/cartoes/{{novoCartaoId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "cartoes",
+                "{{novoCartaoId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Atualizar cartão",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/cartoes/{{novoCartaoId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "cartoes",
+                "{{novoCartaoId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"perfilId\": \"{{perfilId}}\",\n  \"texto\": \"Brincar no parque\",\n  \"corHex\": \"#ff2e9e4f\",\n  \"icone\": \"park\",\n  \"favorito\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Excluir cartão",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/cartoes/{{novoCartaoId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "cartoes",
+                "{{novoCartaoId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. N:N Prancha x Cartão",
+      "item": [
+        {
+          "name": "Adicionar cartão à prancha",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/pranchas/{{pranchaId}}/cartoes/{{cartaoId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "pranchas",
+                "{{pranchaId}}",
+                "cartoes",
+                "{{cartaoId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ordem\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Listar cartões da prancha",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/pranchas/{{pranchaId}}/cartoes",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "pranchas",
+                "{{pranchaId}}",
+                "cartoes"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Adicionar com ordem negativa (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/pranchas/{{pranchaId}}/cartoes/{{cartaoId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "pranchas",
+                "{{pranchaId}}",
+                "cartoes",
+                "{{cartaoId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ordem\": -1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Remover cartão da prancha",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/pranchas/{{pranchaId}}/cartoes/{{cartaoId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "pranchas",
+                "{{pranchaId}}",
+                "cartoes",
+                "{{cartaoId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Remover vínculo inexistente (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/pranchas/{{pranchaId}}/cartoes/{{cartaoId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "pranchas",
+                "{{pranchaId}}",
+                "cartoes",
+                "{{cartaoId}}"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Alertas (histórico do WebSocket)",
+      "item": [
+        {
+          "name": "Histórico de alertas do perfil",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base}}/alertas?perfilId={{perfilId}}",
+              "host": [
+                "{{base}}"
+              ],
+              "path": [
+                "alertas"
+              ],
+              "query": [
+                {
+                  "key": "perfilId",
+                  "value": "{{perfilId}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
