@@ -31,11 +31,6 @@ public class UsuarioService {
     }
 
     @Transactional(readOnly = true)
-    public List<UsuarioResponse> listar() {
-        return usuarios.findAll().stream().map(UsuarioResponse::from).toList();
-    }
-
-    @Transactional(readOnly = true)
     public UsuarioResponse obter(UUID id) {
         return UsuarioResponse.from(buscar(id));
     }
@@ -47,12 +42,13 @@ public class UsuarioService {
 
     /** Cria a conta e o perfil titular (responsável) numa única transação. */
     @Transactional
-    public UsuarioResponse criar(UsuarioRequest req) {
+    public UsuarioResponse criar(UUID id, UsuarioRequest req) {
         validarMaioridade(req.dataNascimento());
         if (usuarios.existsByEmailIgnoreCase(req.email())) {
             throw new ConflitoException("E-mail já cadastrado");
         }
         Usuario u = new Usuario();
+        u.setId(id);
         preencher(u, req);
         Perfil titular = new Perfil();
         titular.setUsuario(u);

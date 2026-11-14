@@ -23,11 +23,11 @@ Este projeto está sendo desenvolvido em âmbito acadêmico com foco em **acessi
 
 ## 🛠️ Tecnologias Utilizadas
 
-* **Front-end:** Dart / Flutter (Android)
+* **Front-end:** Dart / Flutter (Android e Web)
 * **Voz:** flutter_tts (motor nativo, pt-BR)
 * **Ícones & Pictogramas:** Biblioteca de CAA aberta **ARASAAC** (catálogo local em SQLite)
 * **Gerenciamento de Estado:** Provider (SyncService, ProfileProvider, EmergencyService)
-* **Offline:** SQLite (sqflite) + fila de sincronização enviada somente em Wi-Fi
+* **Offline:** SQLite no mobile, armazenamento local no Web e fila de sincronização enviada somente em Wi-Fi
 * **Notificações:** flutter_local_notifications (barra de progresso da sincronização)
 * **Nuvem:** Supabase (Auth, PostgreSQL, Storage)
 * **Back-end:** Java 17 / Spring Boot 3 / JPA / WebSocket STOMP (`BACKEND/api`)
@@ -35,22 +35,30 @@ Este projeto está sendo desenvolvido em âmbito acadêmico com foco em **acessi
 
 ## ▶️ Como executar
 
-1. **Supabase:** rode no SQL Editor `BACKEND/database/supabase_content.sql` e depois
-   `BACKEND/database/voxa_migracao_v2.sql`. Em Authentication > URL Configuration >
+1. **Supabase:** rode no SQL Editor `BACKEND/database/supabase_content.sql`, depois
+   `BACKEND/database/voxa_migracao_v2.sql` e
+   `BACKEND/database/fix_auth_user_trigger.sql`. Em Authentication > URL Configuration >
    Redirect URLs adicione `io.supabase.voxa://login-callback/**`.
-2. **App:** em `FRONTEND/voxa`, copie `.env.example` para `.env`, preencha e rode
-   `flutter pub get`, `flutter analyze`, `flutter test` e `flutter build apk --release`.
-   Para assinar o release, veja `android/key.properties.example`.
-3. **API:** em `BACKEND/api`, `mvn spring-boot:run` (H2 com dados de exemplo) ou o
+2. **App:** em `FRONTEND/voxa`, copie `.env.example` para `.env`, preencha a URL e
+   a chave pública (anon) do Supabase e ajuste os endereços da API para o seu
+   ambiente. Rode `flutter pub get`, `flutter analyze`, `flutter test` e
+   `flutter build apk --release`. Para assinar o release, veja
+   `android/key.properties.example`.
+3. **API:** configure `SUPABASE_URL` e, para tokens HS256, `SUPABASE_JWT_SECRET`
+   no ambiente do backend. Rode `mvn spring-boot:run` em `BACKEND/api` para usar
+   H2 com dados de exemplo ou configure também as credenciais do PostgreSQL e o
    perfil `supabase` (veja `BACKEND/api/README.md`). Painel do cuidador em
    http://localhost:8080/ e Swagger em http://localhost:8080/swagger-ui.html.
 
 O catálogo ARASAAC fica no SQLite do aparelho (não é mais copiado para cada
 perfil no Supabase). As linhas abaixo descrevem o conteúdo criado pelo usuário.
 
-Pranchas e cartões são persistidos no Supabase usando as tabelas existentes
-`prancha`, `cartao` e `prancha_cartao`, com acesso protegido por políticas RLS.
-A tabela de associação mantém o relacionamento muitos-para-muitos. O catálogo
+Pranchas e cartões são consultados e persistidos pela API REST Spring, que usa
+as tabelas PostgreSQL `prancha`, `cartao` e `prancha_cartao`. O app envia o
+access token do Supabase; a API valida a identidade e limita as operações aos
+dados do responsável autenticado. A conexão JDBC do backend não depende de RLS
+para autorizar essas operações. A tabela de associação mantém o relacionamento
+muitos-para-muitos. O catálogo
 ARASAAC vem de `BACKEND/arasaac_dataset/catalogo.json` (convertido em
 `assets/arasaac/catalogo_inicial.json` por `prepare_flutter_catalog.js`, que também
 classifica cada pictograma na chave de cores Fitzgerald). Imagens do dispositivo são enviadas ao bucket privado

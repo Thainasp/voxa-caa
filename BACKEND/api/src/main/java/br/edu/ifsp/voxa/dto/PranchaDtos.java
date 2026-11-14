@@ -22,7 +22,9 @@ public final class PranchaDtos {
             String icone,
             String imagemUrl,
             String caminhoAudio,
-            @Min(0) Integer ordem) {
+            @Min(0) Integer ordem,
+            UUID id,
+            String imagemStoragePath) {
     }
 
     public record PranchaCartaoRequest(@NotNull @Min(0) Integer ordem) {
@@ -43,13 +45,15 @@ public final class PranchaDtos {
             String nome,
             String icone,
             String imagemUrl,
+            String imagemStoragePath,
             String caminhoAudio,
             int ordem,
             List<PranchaCartaoResponse> cartoes) {
 
         public static PranchaResponse from(Prancha p, boolean comCartoes) {
             return new PranchaResponse(p.getId(), p.getPerfil().getId(), p.getChave(), p.getNome(), p.getIcone(),
-                    p.getImagemUrl(), p.getCaminhoAudio(), p.getOrdem() == null ? 0 : p.getOrdem(),
+                    p.getImagemUrl(), p.getImagemStoragePath(), p.getCaminhoAudio(),
+                    p.getOrdem() == null ? 0 : p.getOrdem(),
                     comCartoes ? p.getItens().stream().map(PranchaCartaoResponse::from).toList() : null);
         }
     }

@@ -51,6 +51,151 @@ void main() {
       requests.add(request);
       final path = request.url.path;
 
+      if (path == '/api/v1/pranchas' && request.method == 'GET') {
+        final profileId = request.url.queryParameters['perfilId'];
+        return _jsonResponse(
+          boards
+              .where(
+                (board) =>
+                    board['perfil_id'] == profileId &&
+                    board['catalogo_arasaac'] != true,
+              )
+              .map(_boardToApi)
+              .toList(),
+          request,
+        );
+      }
+      if (path == '/api/v1/pranchas' && request.method == 'POST') {
+        final row = _boardFromApi(
+          jsonDecode(request.body) as Map<String, dynamic>,
+        );
+        row['id'] = _newBoardId;
+        boards.add(row);
+        return _jsonResponse(_boardToApi(row), request);
+      }
+      final boardLinks = RegExp(r'^/api/v1/pranchas/([^/]+)/cartoes$')
+          .firstMatch(path);
+      if (boardLinks != null && request.method == 'GET') {
+        final boardId = boardLinks.group(1);
+        return _jsonResponse(
+          associations
+              .where((item) => item['prancha_id'] == boardId)
+              .map(
+                (item) => {
+                  'cartaoId': item['cartao_id'],
+                  'ordem': item['ordem'],
+                },
+              )
+              .toList(),
+          request,
+        );
+      }
+      final boardCardLink = RegExp(
+        r'^/api/v1/pranchas/([^/]+)/cartoes/([^/]+)$',
+      ).firstMatch(path);
+      if (boardCardLink != null) {
+        final boardId = boardCardLink.group(1);
+        final cardId = boardCardLink.group(2);
+        if (request.method == 'PUT') {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          final association = associations.firstWhere(
+            (item) =>
+                item['prancha_id'] == boardId && item['cartao_id'] == cardId,
+            orElse: () {
+              final item = {
+                'prancha_id': boardId,
+                'cartao_id': cardId,
+                'ordem': 0,
+              };
+              associations.add(item);
+              return item;
+            },
+          );
+          association['ordem'] = body['ordem'];
+          return _jsonResponse({
+            'cartaoId': cardId,
+            'ordem': association['ordem'],
+          }, request);
+        }
+        if (request.method == 'DELETE') {
+          associations.removeWhere(
+            (item) =>
+                item['prancha_id'] == boardId && item['cartao_id'] == cardId,
+          );
+          return http.Response('', 204, request: request);
+        }
+      }
+      final boardItem = RegExp(r'^/api/v1/pranchas/([^/]+)$').firstMatch(path);
+      if (boardItem != null) {
+        final id = boardItem.group(1);
+        if (request.method == 'GET') {
+          final row = boards.firstWhere((item) => item['id'] == id);
+          return _jsonResponse(_boardToApi(row), request);
+        }
+        if (request.method == 'PUT') {
+          final row = boards.firstWhere((item) => item['id'] == id);
+          row.addAll(
+            _boardFromApi(jsonDecode(request.body) as Map<String, dynamic>),
+          );
+          return _jsonResponse(_boardToApi(row), request);
+        }
+        if (request.method == 'DELETE') {
+          boards.removeWhere((item) => item['id'] == id);
+          associations.removeWhere((item) => item['prancha_id'] == id);
+          return http.Response('', 204, request: request);
+        }
+      }
+      if (path == '/api/v1/cartoes' && request.method == 'GET') {
+        final profileId = request.url.queryParameters['perfilId'];
+        return _jsonResponse(
+          cards
+              .where((card) => card['perfil_id'] == profileId)
+              .map(_cardToApi)
+              .toList(),
+          request,
+        );
+      }
+      if (path == '/api/v1/cartoes' && request.method == 'POST') {
+        final row = _cardFromApi(
+          jsonDecode(request.body) as Map<String, dynamic>,
+        );
+        row['id'] = _cardId;
+        cards.add(row);
+        return _jsonResponse(_cardToApi(row), request);
+      }
+      final cardBoards = RegExp(r'^/api/v1/cartoes/([^/]+)/pranchas$')
+          .firstMatch(path);
+      if (cardBoards != null && request.method == 'GET') {
+        final cardId = cardBoards.group(1);
+        return _jsonResponse(
+          associations
+              .where((item) => item['cartao_id'] == cardId)
+              .map((item) => item['prancha_id'])
+              .toList(),
+          request,
+        );
+      }
+      final cardItem = RegExp(r'^/api/v1/cartoes/([^/]+)$').firstMatch(path);
+      if (cardItem != null) {
+        final id = cardItem.group(1);
+        if (request.method == 'GET') {
+          final row = cards.firstWhere((item) => item['id'] == id);
+          return _jsonResponse(_cardToApi(row), request);
+        }
+        if (request.method == 'PUT') {
+          final row = cards.firstWhere((item) => item['id'] == id);
+          row.addAll(
+            _cardFromApi(jsonDecode(request.body) as Map<String, dynamic>),
+          );
+          return _jsonResponse(_cardToApi(row), request);
+        }
+        if (request.method == 'DELETE') {
+          cards.removeWhere((item) => item['id'] == id);
+          associations.removeWhere((item) => item['cartao_id'] == id);
+          return http.Response('', 204, request: request);
+        }
+      }
+
       if (path.endsWith('/rest/v1/perfil')) {
         if (request.method == 'GET') {
           final userId = _queryValue(request, 'usuario_id');
@@ -325,10 +470,12 @@ void main() {
       accessToken: () async => 'test-access-token',
       httpClient: httpClient,
     );
+    HomeContentController.httpClientForTesting = httpClient;
   });
 
   tearDown(() {
     HomeContentController.clientForTesting = null;
+    HomeContentController.httpClientForTesting = null;
     httpClient.close();
   });
 
@@ -438,12 +585,14 @@ void main() {
     await HomeContentController.loadContentForProfile(_profileId);
 
     expect(
-      requests.any((request) => request.url.path.endsWith('/rest/v1/prancha')),
+      requests.any((request) => request.url.path == '/api/v1/pranchas'),
       isTrue,
     );
     expect(
       requests.any(
-        (request) => request.url.path.endsWith('/rest/v1/prancha_cartao'),
+        (request) =>
+            request.url.path.contains('/api/v1/pranchas/') &&
+            request.url.path.endsWith('/cartoes'),
       ),
       isTrue,
     );
@@ -524,6 +673,20 @@ void main() {
 
       // Pranchas do catálogo não podem ser editadas nem excluídas.
       expect(HomeContentController.editableBoards, isEmpty);
+      final catalogBoard = HomeContentController.boards.first;
+      await expectLater(
+        HomeContentController.saveBoard({
+          ...catalogBoard,
+          'label': 'Bebidas atualizada',
+        }, isNew: false),
+        throwsStateError,
+      );
+      expect(
+        requests.any(
+          (request) => request.url.path.contains('/arasaac:board:'),
+        ),
+        isFalse,
+      );
       expect(
         () => HomeContentController.deleteBoard('Principal'),
         throwsStateError,
@@ -606,7 +769,7 @@ void main() {
       expect(
         requests.any(
           (request) =>
-              request.url.path.endsWith('/rest/v1/prancha') &&
+              request.url.path == '/api/v1/pranchas' &&
               request.method == 'POST',
         ),
         isTrue,
@@ -614,32 +777,32 @@ void main() {
       expect(
         requests.any(
           (request) =>
-              request.url.path.endsWith('/rest/v1/prancha') &&
-              request.method == 'PATCH',
+              request.url.path.startsWith('/api/v1/pranchas/') &&
+              request.method == 'PUT',
         ),
         isTrue,
       );
       expect(
         requests.any(
           (request) =>
-              request.url.path.endsWith('/rest/v1/cartao') &&
-              request.method == 'POST',
+              request.url.path == '/api/v1/cartoes' && request.method == 'POST',
         ),
         isTrue,
       );
       expect(
         requests.any(
           (request) =>
-              request.url.path.endsWith('/rest/v1/prancha_cartao') &&
-              request.method == 'POST',
+              request.url.path.contains('/api/v1/pranchas/') &&
+              request.url.path.contains('/cartoes/') &&
+              request.method == 'PUT',
         ),
         isTrue,
       );
       expect(
         requests.any(
           (request) =>
-              request.url.path.endsWith('/rest/v1/cartao') &&
-              request.method == 'PATCH',
+              request.url.path.startsWith('/api/v1/cartoes/') &&
+              request.method == 'PUT',
         ),
         isTrue,
       );
@@ -647,6 +810,60 @@ void main() {
     },
   );
 }
+
+Map<String, dynamic> _boardToApi(Map<String, dynamic> row) => {
+  'id': row['id'],
+  'perfilId': row['perfil_id'],
+  'chave': row['chave'],
+  'nome': row['nome'],
+  'icone': row['icone'],
+  'imagemUrl': row['imagem_url'],
+  'imagemStoragePath': row['imagem_storage_path'],
+  'caminhoAudio': row['caminho_audio'],
+  'ordem': row['ordem'] ?? 0,
+  'cartoes': null,
+};
+
+Map<String, dynamic> _boardFromApi(Map<String, dynamic> request) => {
+  'id': request['id'],
+  'perfil_id': request['perfilId'],
+  'chave': request['chave'],
+  'nome': request['nome'],
+  'icone': request['icone'],
+  'imagem_url': request['imagemUrl'],
+  'imagem_storage_path': request['imagemStoragePath'],
+  'caminho_audio': request['caminhoAudio'],
+  'ordem': request['ordem'] ?? 0,
+  'catalogo_arasaac': false,
+};
+
+Map<String, dynamic> _cardToApi(Map<String, dynamic> row) => {
+  'id': row['id'],
+  'perfilId': row['perfil_id'],
+  'texto': row['texto'],
+  'caminhoImagem': row['caminho_imagem'],
+  'imagemStoragePath': row['imagem_storage_path'],
+  'caminhoAudio': row['caminho_audio'],
+  'icone': row['icone'],
+  'corHex': row['cor_hex'],
+  'arasaacId': row['arasaac_id'],
+  'favorito': row['is_favorito'] ?? false,
+  'frequenciaUso': row['frequencia_uso'] ?? 0,
+};
+
+Map<String, dynamic> _cardFromApi(Map<String, dynamic> request) => {
+  'id': request['id'],
+  'perfil_id': request['perfilId'],
+  'texto': request['texto'],
+  'caminho_imagem': request['caminhoImagem'],
+  'imagem_storage_path': request['imagemStoragePath'],
+  'caminho_audio': request['caminhoAudio'],
+  'icone': request['icone'],
+  'cor_hex': request['corHex'],
+  'arasaac_id': request['arasaacId'],
+  'is_favorito': request['favorito'] ?? false,
+  'frequencia_uso': 0,
+};
 
 String? _queryValue(http.Request request, String key) {
   final value = request.url.queryParameters[key];

@@ -53,11 +53,15 @@ class AppServices {
     final client = Supabase.instance.client;
 
     LocalContentStore store;
-    try {
-      store = kIsWeb ? InMemoryContentStore() : await SqfliteContentStore.open();
-    } catch (error) {
-      debugPrint('SQLite indisponível, usando memória: $error');
-      store = InMemoryContentStore();
+    if (kIsWeb) {
+      store = await SharedPreferencesContentStore.open();
+    } else {
+      try {
+        store = await SqfliteContentStore.open();
+      } catch (error) {
+        debugPrint('SQLite indisponível, usando memória: $error');
+        store = InMemoryContentStore();
+      }
     }
 
     final contentApi = ContentApi(client);

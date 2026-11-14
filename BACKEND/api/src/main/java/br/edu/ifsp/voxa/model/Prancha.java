@@ -12,7 +12,6 @@ import java.util.UUID;
 public class Prancha {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -29,6 +28,9 @@ public class Prancha {
 
     @Column(name = "imagem_url")
     private String imagemUrl;
+
+    @Column(name = "imagem_storage_path")
+    private String imagemStoragePath;
 
     @Column(name = "caminho_audio")
     private String caminhoAudio;
@@ -55,6 +57,8 @@ public class Prancha {
     public void setIcone(String icone) { this.icone = icone; }
     public String getImagemUrl() { return imagemUrl; }
     public void setImagemUrl(String imagemUrl) { this.imagemUrl = imagemUrl; }
+    public String getImagemStoragePath() { return imagemStoragePath; }
+    public void setImagemStoragePath(String imagemStoragePath) { this.imagemStoragePath = imagemStoragePath; }
     public String getCaminhoAudio() { return caminhoAudio; }
     public void setCaminhoAudio(String caminhoAudio) { this.caminhoAudio = caminhoAudio; }
     public Integer getOrdem() { return ordem; }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:voxa/core/data/remote/account_api.dart';
 import 'package:voxa/core/widgets/custom_text_field.dart';
 import 'package:voxa/features/auth/presentation/widgets/social_login_buttons.dart';
 import 'package:voxa/models/user_model.dart';
@@ -57,7 +58,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Conta de ${result.name} cadastrada com sucesso!'),
+          content: Text(
+            'Conta de ${result.name} criada. Confirme o e-mail se solicitado.',
+          ),
           backgroundColor: AppColors.headerGreen,
         ),
       );
@@ -82,8 +85,24 @@ class _LoginScreenState extends State<LoginScreen> {
         throw const AuthException('Falha ao autenticar.');
       }
 
-      // 2) Dados cadastrais. Se falhar, o login continua valendo (a pessoa já
-      //    está autenticada) e usamos os dados do próprio Auth.
+      final metadata = authUser.userMetadata ?? const <String, dynamic>{};
+      await AccountApi(Supabase.instance.client).ensureUserRecord(
+        id: authUser.id,
+        name:
+            (metadata['display_name'] ??
+                    metadata['nome'] ??
+                    metadata['name'] ??
+                    authUser.email?.split('@').first ??
+                    'Usuário')
+                .toString(),
+        email: authUser.email ?? '',
+        phone: metadata['telefone']?.toString(),
+        birthDate: metadata['data_nascimento']?.toString(),
+        avatarUrl: metadata['avatar_url']?.toString(),
+      );
+
+      // 2) Carrega dados cadastrais. A leitura opcional pode falhar sem impedir
+      //    o acesso; o Auth fornece os dados mínimos para abrir o app.
       final userProfile = await _loadUserProfile(authUser);
 
       if (!mounted) return;
@@ -98,6 +117,8 @@ class _LoginScreenState extends State<LoginScreen> {
       _showError(
         _isNetworkError(e)
             ? 'Sem conexão com o servidor. Verifique sua internet e tente novamente.'
+            : e is PostgrestException
+            ? 'Não foi possível preparar seu perfil: ${e.message}'
             : 'Não foi possível entrar agora. Tente novamente em instantes.',
       );
     } finally {
@@ -113,11 +134,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final fallback = UserModel(
       id: authUser.id,
-      name: (meta?['display_name'] ??
-              meta?['nome'] ??
-              authUser.email?.split('@').first ??
-              'Usuário')
-          .toString(),
+      name:
+          (meta?['display_name'] ??
+                  meta?['nome'] ??
+                  authUser.email?.split('@').first ??
+                  'Usuário')
+              .toString(),
       email: authUser.email ?? '',
       avatarUrl: metaAvatar,
       isResponsavel: true,

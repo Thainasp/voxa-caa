@@ -25,8 +25,13 @@ public class PerfilService {
         this.usuarioService = usuarioService;
     }
 
-    Perfil buscar(UUID id) {
+    public Perfil buscar(UUID id) {
         return perfis.findById(id).orElseThrow(() -> new RecursoNaoEncontradoException("Perfil", id));
+    }
+
+    public Perfil buscarDoUsuario(UUID id, UUID usuarioId) {
+        return perfis.findByIdAndUsuarioId(id, usuarioId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Perfil", id));
     }
 
     @Transactional(readOnly = true)
@@ -36,8 +41,8 @@ public class PerfilService {
     }
 
     @Transactional(readOnly = true)
-    public PerfilResponse obter(UUID id) {
-        return PerfilResponse.from(buscar(id));
+    public PerfilResponse obter(UUID id, UUID usuarioId) {
+        return PerfilResponse.from(buscarDoUsuario(id, usuarioId));
     }
 
     @Transactional
@@ -56,8 +61,8 @@ public class PerfilService {
     }
 
     @Transactional
-    public PerfilResponse atualizar(UUID id, PerfilUpdateRequest req) {
-        Perfil p = buscar(id);
+    public PerfilResponse atualizar(UUID id, UUID usuarioId, PerfilUpdateRequest req) {
+        Perfil p = buscarDoUsuario(id, usuarioId);
         p.setNome(req.nome().trim());
         p.setAvatarUrl(req.avatarUrl());
         return PerfilResponse.from(p);
@@ -65,8 +70,8 @@ public class PerfilService {
 
     /** O perfil responsável só sai junto com a conta (DELETE /usuarios/{id}). */
     @Transactional
-    public void excluir(UUID id) {
-        Perfil p = buscar(id);
+    public void excluir(UUID id, UUID usuarioId) {
+        Perfil p = buscarDoUsuario(id, usuarioId);
         if (Boolean.TRUE.equals(p.getResponsavel())) {
             throw new ConflitoException("O perfil responsável não pode ser excluído");
         }

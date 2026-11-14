@@ -14,8 +14,8 @@ enum SyncStatus { idle, syncing, error }
 /// Sincronização offline-first (Correções itens 3 e 4 / RF08).
 ///
 /// - Toda alteração feita sem Wi-Fi entra na fila `sync_outbox` do SQLite.
-/// - Ao conectar no Wi-Fi, a fila é enviada ao Supabase na ordem em que as
-///   alterações aconteceram. Enquanto isso aparece a notificação MSG01 com
+/// - Ao conectar no Wi-Fi, a fila é enviada à API na ordem em que as
+/// alterações aconteceram. Enquanto isso aparece a notificação MSG01 com
 ///   barra de progresso; ao terminar ela é substituída pela MSG02.
 /// - Em dados móveis nada é enviado (requisito do item 3).
 /// - Depois de enviar, baixa o conteúdo do perfil ativo e atualiza o SQLite.

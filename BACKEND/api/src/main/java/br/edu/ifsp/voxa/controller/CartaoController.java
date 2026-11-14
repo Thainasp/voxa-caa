@@ -8,6 +8,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
@@ -26,8 +28,9 @@ public class CartaoController {
     }
 
     @PostMapping
-    public ResponseEntity<CartaoResponse> criar(@Valid @RequestBody CartaoRequest req) {
-        CartaoResponse criado = service.criar(req);
+    public ResponseEntity<CartaoResponse> criar(@Valid @RequestBody CartaoRequest req,
+                                                @AuthenticationPrincipal Jwt jwt) {
+        CartaoResponse criado = service.criar(req, usuarioId(jwt));
         return ResponseEntity.created(ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}").buildAndExpand(criado.id()).toUri()).body(criado);
     }
@@ -35,23 +38,34 @@ public class CartaoController {
     @GetMapping
     @Operation(summary = "Lista cartões (filtros opcionais: perfilId e busca por texto)")
     public List<CartaoResponse> listar(@RequestParam(required = false) UUID perfilId,
-                                       @RequestParam(required = false) String busca) {
-        return service.listar(perfilId, busca);
+                                       @RequestParam(required = false) String busca,
+                                       @AuthenticationPrincipal Jwt jwt) {
+        return service.listar(perfilId, busca, usuarioId(jwt));
     }
 
     @GetMapping("/{id}")
-    public CartaoResponse obter(@PathVariable UUID id) {
-        return service.obter(id);
+    public CartaoResponse obter(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        return service.obter(id, usuarioId(jwt));
     }
 
     @PutMapping("/{id}")
-    public CartaoResponse atualizar(@PathVariable UUID id, @Valid @RequestBody CartaoRequest req) {
-        return service.atualizar(id, req);
+    public CartaoResponse atualizar(@PathVariable UUID id, @Valid @RequestBody CartaoRequest req,
+                                    @AuthenticationPrincipal Jwt jwt) {
+        return service.salvar(id, req, usuarioId(jwt));
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void excluir(@PathVariable UUID id) {
-        service.excluir(id);
+    public void excluir(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        service.excluir(id, usuarioId(jwt));
+    }
+
+    @GetMapping("/{id}/pranchas")
+    public List<UUID> pranchas(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        return service.listarPranchas(id, usuarioId(jwt));
+    }
+
+    private UUID usuarioId(Jwt jwt) {
+        return UUID.fromString(jwt.getSubject());
     }
 }

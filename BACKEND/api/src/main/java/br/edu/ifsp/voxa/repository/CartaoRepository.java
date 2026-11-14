@@ -4,9 +4,12 @@ import br.edu.ifsp.voxa.model.Cartao;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface CartaoRepository extends JpaRepository<Cartao, UUID> {
     List<Cartao> findByPerfilIdOrderByTextoAsc(UUID perfilId);
+    List<Cartao> findByPerfilUsuarioIdOrderByTextoAsc(UUID usuarioId);
     List<Cartao> findByPerfilIdAndTextoContainingIgnoreCaseOrderByTextoAsc(UUID perfilId, String texto);
+    Optional<Cartao> findByIdAndPerfilUsuarioId(UUID id, UUID usuarioId);
 }

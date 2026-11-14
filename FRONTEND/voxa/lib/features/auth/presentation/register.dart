@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:voxa/core/data/remote/account_api.dart';
 import 'package:voxa/core/widgets/app_colors.dart';
 import 'package:voxa/core/widgets/custom_text_field.dart';
 import 'package:voxa/models/user_model.dart';
@@ -89,6 +90,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final email = _emailController.text.trim();
       final phone = _phoneController.text.trim();
       final password = _passwordController.text;
+      final birthDate = _formatDateToIso(_birthController.text);
 
       final response = await Supabase.instance.client.auth.signUp(
         email: email,
@@ -98,6 +100,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           'nome': name,
           'name': name,
           'telefone': phone,
+          'data_nascimento': birthDate,
         },
       );
 
@@ -106,28 +109,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
         throw const AuthException('Não foi possível registrar o usuário.');
       }
 
-      await Supabase.instance.client.from('usuario').upsert({
-        'id': authUser.id,
-        'nome': name,
-        'email': email,
-        'telefone': phone,
-        'data_nascimento': _formatDateToIso(_birthController.text),
-        'is_responsavel': true,
-      });
-
       final createdProfile = UserModel(
         id: authUser.id,
         name: name,
         email: email,
         phone: phone,
-        birthDate: _birthController.text.trim(),
+        birthDate: birthDate,
       );
 
       if (!mounted) return;
 
+      if (response.session != null) {
+        await AccountApi(Supabase.instance.client).ensureUserRecord(
+          id: authUser.id,
+          name: name,
+          email: email,
+          phone: phone,
+          birthDate: birthDate,
+        );
+      }
+
+      if (!mounted) return;
+      final confirmationRequired = response.session == null;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cadastro realizado com sucesso!'),
+        SnackBar(
+          content: Text(
+            confirmationRequired
+                ? 'Conta criada. Confirme seu e-mail antes de entrar.'
+                : 'Cadastro realizado com sucesso!',
+          ),
           backgroundColor: AppColors.headerGreen,
         ),
       );
@@ -146,7 +156,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.message), backgroundColor: Colors.redAccent),
       );
-    } catch (_) {
+    } on PostgrestException catch (error) {
+      debugPrint('Falha ao salvar registro do cadastro: ${error.message}');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Não foi possível salvar seu perfil: ${error.message}'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Falha inesperada no cadastro: $error\n$stackTrace');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -22,7 +23,7 @@ import 'package:voxa/models/user_model.dart';
 /// 1. O catálogo ARASAAC vem do SQLite do aparelho (CatalogRepository).
 /// 2. O conteúdo criado pelo usuário abre direto do SQLite; a nuvem é
 ///    consultada em segundo plano e, quando muda, a Home recarrega.
-/// 3. Alterações com Wi-Fi vão direto ao Supabase (e são espelhadas no
+/// 3. Alterações com Wi-Fi vão direto à API (e são espelhadas no
 ///    SQLite). Sem Wi-Fi, ficam no SQLite e entram na fila de sincronização.
 ///
 /// Toda chamada de rede passa pela [ContentApi] (camada de rede).
@@ -55,6 +56,7 @@ class HomeContentController {
   static SupabaseClient? _clientForTesting;
   static LocalContentStore? _testStore;
   static CatalogRepository? _testCatalog;
+  static http.Client? httpClientForTesting;
 
   /// Nos testes o controller usa este cliente, um SQLite em memória, considera
   /// que há Wi-Fi e não carrega o catálogo (a não ser que
@@ -73,7 +75,12 @@ class HomeContentController {
   static SupabaseClient get _client =>
       _clientForTesting ?? Supabase.instance.client;
   static ContentApi get _api => _testing
-      ? ContentApi(_clientForTesting!)
+      ? ContentApi(
+          _clientForTesting!,
+          baseUri: Uri.parse('http://localhost:8080/api/v1'),
+          httpClient: httpClientForTesting,
+          tokenProvider: () => 'test-access-token',
+        )
       : AppServices.instance.contentApi;
   static LocalContentStore get _store => _testing
       ? (_testStore ??= InMemoryContentStore())
@@ -356,7 +363,10 @@ class HomeContentController {
     }
   }
 
-  static Future<void> _cacheProfile(String authUserId, UserModel profile) async {
+  static Future<void> _cacheProfile(
+    String authUserId,
+    UserModel profile,
+  ) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final json = jsonEncode(profile.toMap());
@@ -367,11 +377,16 @@ class HomeContentController {
     } catch (_) {}
   }
 
-  static Future<UserModel?> _cachedProfile(String authUserId, String slot) async {
+  static Future<UserModel?> _cachedProfile(
+    String authUserId,
+    String slot,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     final json = prefs.getString(_profileCacheKey(authUserId, slot));
     if (json == null) return null;
-    return UserModel.fromMap(Map<String, dynamic>.from(jsonDecode(json) as Map));
+    return UserModel.fromMap(
+      Map<String, dynamic>.from(jsonDecode(json) as Map),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -516,10 +531,7 @@ class HomeContentController {
       ...userBoards,
       ...?catalog?.boards.where((b) => !userKeys.contains(b['key'])),
     ];
-    cardsByBoard = {
-      ...?catalog?.cardsByBoard,
-      ...userCards,
-    };
+    cardsByBoard = {...?catalog?.cardsByBoard, ...userCards};
   }
 
   static Map<String, dynamic> _legacyContentPayload(String content) {
@@ -656,7 +668,7 @@ class HomeContentController {
   // Decisão online/offline
   // ---------------------------------------------------------------------------
 
-  /// true: grava direto no Supabase. false: grava no SQLite e enfileira.
+  /// true: grava direto na API. false: grava no SQLite e enfileira.
   static Future<bool> _useRemote() async {
     if (_testing) return true;
     final sync = AppServices.instance.sync;
@@ -750,6 +762,9 @@ class HomeContentController {
             orElse: () =>
                 throw StateError('A tábua selecionada não existe mais.'),
           );
+    if (existingBoard?['catalogoArasaac'] == true) {
+      throw StateError('As pranchas do catálogo ARASAAC não podem ser editadas.');
+    }
     final oldStoragePath = existingBoard?['imageStoragePath'] as String?;
 
     if (!await _useRemote()) {
@@ -896,7 +911,9 @@ class HomeContentController {
       orElse: () => throw StateError('A tábua selecionada não existe mais.'),
     );
     if (board['catalogoArasaac'] == true) {
-      throw StateError('As pranchas do catálogo ARASAAC não podem ser excluídas.');
+      throw StateError(
+        'As pranchas do catálogo ARASAAC não podem ser excluídas.',
+      );
     }
     final boardId = board['id'] as String;
     final boardImagePath = board['imageStoragePath'] as String?;
@@ -1026,7 +1043,10 @@ class HomeContentController {
         row = await _api.updateCard(card['id'] as String, profileId, data);
         final previousBoardKey = existing!['boardKey'] as String;
         if (previousBoardKey != boardKey) {
-          if (!await _api.linkExists(board['id'] as String, card['id'] as String)) {
+          if (!await _api.linkExists(
+            board['id'] as String,
+            card['id'] as String,
+          )) {
             await _api.insertLink({
               'prancha_id': board['id'],
               'cartao_id': card['id'],
@@ -1102,7 +1122,9 @@ class HomeContentController {
       'texto': label,
       'cor_hex': _colorToHex(card['color'] as Color? ?? Colors.teal),
       'icone': _getIconName(card['icon'] as IconData?),
-      'caminho_imagem': storagePath == null ? card['imagePath'] as String? : null,
+      'caminho_imagem': storagePath == null
+          ? card['imagePath'] as String?
+          : null,
       'imagem_storage_path': storagePath,
       'caminho_audio': card['audioPath'],
       'arasaac_id': card['arasaacId'],
@@ -1167,7 +1189,11 @@ class HomeContentController {
             ? order
             : matchingCards.first['order'] as int? ?? order;
         entry.value.removeWhere((item) => item['id'] == savedCard['id']);
-        entry.value.add({...savedCard, 'boardKey': entry.key, 'order': cardOrder});
+        entry.value.add({
+          ...savedCard,
+          'boardKey': entry.key,
+          'order': cardOrder,
+        });
       } else if (previousBoardKey != null &&
           previousBoardKey != boardKey &&
           entry.key == previousBoardKey) {
@@ -1245,7 +1271,10 @@ class HomeContentController {
         .toList();
     if (orphanedIds.isEmpty) return;
 
-    final orphanedCards = await _api.fetchCardImagePaths(profileId, orphanedIds);
+    final orphanedCards = await _api.fetchCardImagePaths(
+      profileId,
+      orphanedIds,
+    );
     await _api.deleteCards(orphanedIds, profileId);
     for (final cardId in orphanedIds) {
       await _store.deleteCard(cardId);

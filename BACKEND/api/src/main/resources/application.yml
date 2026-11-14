@@ -18,6 +18,9 @@ springdoc:
     path: /swagger-ui.html
 
 voxa:
+  security:
+    supabase-url: ${SUPABASE_URL:}
+    supabase-jwt-secret: ${SUPABASE_JWT_SECRET:}
   sms:
     # log = SMS simulado (registrado no console). twilio = envio real.
     provider: ${VOXA_SMS_PROVIDER:log}

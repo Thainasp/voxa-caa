@@ -64,9 +64,8 @@ class _EditPesquisaState extends State<Edit_pesquisa> {
   Widget build(BuildContext context) {
     final query = _searchQuery.toLowerCase();
     final editableBoards = HomeContentController.editableBoards;
-    final boardsForEditing = HomeContentController.boardsWithUserCreatedFirst;
     final editableBoardKeys = editableBoards.map((b) => b['key']).toSet();
-    final boards = boardsForEditing.where((b) {
+    final boards = editableBoards.where((b) {
       return (b['label'] as String).toLowerCase().contains(query);
     }).toList();
 

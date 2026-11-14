@@ -10,6 +10,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
@@ -28,52 +30,61 @@ public class PranchaController {
     }
 
     @PostMapping
-    public ResponseEntity<PranchaResponse> criar(@Valid @RequestBody PranchaRequest req) {
-        PranchaResponse criada = service.criar(req);
+    public ResponseEntity<PranchaResponse> criar(@Valid @RequestBody PranchaRequest req,
+                                                 @AuthenticationPrincipal Jwt jwt) {
+        PranchaResponse criada = service.criar(req, usuarioId(jwt));
         return ResponseEntity.created(ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}").buildAndExpand(criada.id()).toUri()).body(criada);
     }
 
     @GetMapping
     @Operation(summary = "Lista pranchas (filtro opcional por perfilId)")
-    public List<PranchaResponse> listar(@RequestParam(required = false) UUID perfilId) {
-        return service.listar(perfilId);
+    public List<PranchaResponse> listar(@RequestParam(required = false) UUID perfilId,
+                                        @AuthenticationPrincipal Jwt jwt) {
+        return service.listar(perfilId, usuarioId(jwt));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "Busca a prancha com seus cartões em ordem")
-    public PranchaResponse obter(@PathVariable UUID id) {
-        return service.obter(id);
+    public PranchaResponse obter(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        return service.obter(id, usuarioId(jwt));
     }
 
     @PutMapping("/{id}")
-    public PranchaResponse atualizar(@PathVariable UUID id, @Valid @RequestBody PranchaRequest req) {
-        return service.atualizar(id, req);
+    public PranchaResponse atualizar(@PathVariable UUID id, @Valid @RequestBody PranchaRequest req,
+                                      @AuthenticationPrincipal Jwt jwt) {
+        return service.salvar(id, req, usuarioId(jwt));
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void excluir(@PathVariable UUID id) {
-        service.excluir(id);
+    public void excluir(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        service.excluir(id, usuarioId(jwt));
     }
 
     @GetMapping("/{id}/cartoes")
     @Operation(summary = "N:N – cartões da prancha")
-    public List<PranchaCartaoResponse> cartoes(@PathVariable UUID id) {
-        return service.listarCartoes(id);
+    public List<PranchaCartaoResponse> cartoes(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        return service.listarCartoes(id, usuarioId(jwt));
     }
 
     @PutMapping("/{id}/cartoes/{cartaoId}")
     @Operation(summary = "N:N – adiciona o cartão à prancha ou muda a ordem")
     public PranchaCartaoResponse vincular(@PathVariable UUID id, @PathVariable UUID cartaoId,
-                                          @Valid @RequestBody PranchaCartaoRequest req) {
-        return service.vincular(id, cartaoId, req.ordem());
+                                          @Valid @RequestBody PranchaCartaoRequest req,
+                                          @AuthenticationPrincipal Jwt jwt) {
+        return service.vincular(id, cartaoId, req.ordem(), usuarioId(jwt));
     }
 
     @DeleteMapping("/{id}/cartoes/{cartaoId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "N:N – remove o cartão da prancha (o cartão continua existindo)")
-    public void desvincular(@PathVariable UUID id, @PathVariable UUID cartaoId) {
-        service.desvincular(id, cartaoId);
+    public void desvincular(@PathVariable UUID id, @PathVariable UUID cartaoId,
+                            @AuthenticationPrincipal Jwt jwt) {
+        service.desvincular(id, cartaoId, usuarioId(jwt));
+    }
+
+    private UUID usuarioId(Jwt jwt) {
+        return UUID.fromString(jwt.getSubject());
     }
 }

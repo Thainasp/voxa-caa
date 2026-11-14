@@ -1,5 +1,6 @@
 package br.edu.ifsp.voxa.controller;
 
+import br.edu.ifsp.voxa.exception.RecursoNaoEncontradoException;
 import br.edu.ifsp.voxa.dto.PerfilDtos.PerfilResponse;
 import br.edu.ifsp.voxa.dto.UsuarioDtos.UsuarioRequest;
 import br.edu.ifsp.voxa.dto.UsuarioDtos.UsuarioResponse;
@@ -9,6 +10,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
@@ -28,40 +32,69 @@ public class UsuarioController {
 
     @PostMapping
     @Operation(summary = "Cria a conta e o perfil responsável")
-    public ResponseEntity<UsuarioResponse> criar(@Valid @RequestBody UsuarioRequest req) {
-        UsuarioResponse criado = service.criar(req);
+    public ResponseEntity<UsuarioResponse> criar(
+            @AuthenticationPrincipal Jwt principal,
+            @Valid @RequestBody UsuarioRequest req) {
+        UsuarioResponse criado = service.criar(userId(principal), req);
         return ResponseEntity.created(ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}").buildAndExpand(criado.id()).toUri()).body(criado);
     }
 
     @GetMapping
     @Operation(summary = "Lista usuários")
-    public List<UsuarioResponse> listar() {
-        return service.listar();
+    public List<UsuarioResponse> listar(@AuthenticationPrincipal Jwt principal) {
+        return List.of(service.obter(userId(principal)));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "Busca um usuário")
-    public UsuarioResponse obter(@PathVariable UUID id) {
+    public UsuarioResponse obter(@PathVariable UUID id, @AuthenticationPrincipal Jwt principal) {
+        requireOwnUser(id, userId(principal));
         return service.obter(id);
     }
 
     @GetMapping("/{id}/perfis")
     @Operation(summary = "Relacionamento 1:N – perfis do usuário")
-    public List<PerfilResponse> perfis(@PathVariable UUID id) {
+    public List<PerfilResponse> perfis(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal Jwt principal) {
+        requireOwnUser(id, userId(principal));
         return service.listarPerfis(id);
     }
 
     @PutMapping("/{id}")
     @Operation(summary = "Atualiza um usuário")
-    public UsuarioResponse atualizar(@PathVariable UUID id, @Valid @RequestBody UsuarioRequest req) {
+    public UsuarioResponse atualizar(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal Jwt principal,
+            @Valid @RequestBody UsuarioRequest req) {
+        requireOwnUser(id, userId(principal));
         return service.atualizar(id, req);
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Exclui o usuário e todos os perfis, pranchas e cartões (cascata)")
-    public void excluir(@PathVariable UUID id) {
+    public void excluir(@PathVariable UUID id, @AuthenticationPrincipal Jwt principal) {
+        requireOwnUser(id, userId(principal));
         service.excluir(id);
+    }
+
+    private static UUID userId(Jwt principal) {
+        String subject = principal.getSubject();
+        if (subject == null || subject.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Token sem identificador de usuário.");
+        }
+        try {
+            return UUID.fromString(subject);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Identificador de usuário inválido.");
+        }
+    }
+
+    private static void requireOwnUser(UUID requestedId, UUID authenticatedUserId) {
+        if (!requestedId.equals(authenticatedUserId)) {
+            throw new RecursoNaoEncontradoException("Usuário", requestedId);
+        }
     }
 }

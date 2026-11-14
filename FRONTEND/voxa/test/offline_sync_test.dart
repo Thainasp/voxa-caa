@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:voxa/core/data/local/local_content_store.dart';
@@ -31,8 +32,10 @@ class RecordingNotifications extends SilentNotificationService {
   final List<String> events = [];
 
   @override
-  Future<void> showSyncProgress({required int done, required int total}) async =>
-      events.add('progresso $done/$total');
+  Future<void> showSyncProgress({
+    required int done,
+    required int total,
+  }) async => events.add('progresso $done/$total');
 
   @override
   Future<void> showSyncDone() async => events.add('concluída');
@@ -78,8 +81,41 @@ void main() {
     expect(await store.pendingCount(), 1);
   });
 
+  test('armazenamento Web preserva conteúdo e fila após reabrir', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = await SharedPreferencesContentStore.open();
+    await store.replaceProfileContent(
+      _profileId,
+      boards: [
+        {'id': 'board-1', 'perfil_id': _profileId, 'ordem': 0},
+      ],
+      cards: [
+        {'id': 'card-1', 'perfil_id': _profileId, 'texto': 'Água'},
+      ],
+      links: [
+        {'prancha_id': 'board-1', 'cartao_id': 'card-1', 'ordem': 0},
+      ],
+    );
+    await store.enqueue(
+      OutboxOperation(
+        perfilId: _profileId,
+        tabela: 'cartao',
+        operacao: 'upsert',
+        payload: {'id': 'card-1', 'texto': 'Água'},
+      ),
+    );
+
+    final reopened = await SharedPreferencesContentStore.open();
+    final content = await reopened.loadProfileContent(_profileId);
+
+    expect(content?.cards.single['texto'], 'Água');
+    expect(content?.links.single['cartao_id'], 'card-1');
+    expect((await reopened.pendingOperations()).single.payload['id'], 'card-1');
+  });
+
   group('SyncService', () {
     late List<http.Request> requests;
+    late http.Client apiClient;
     late InMemoryContentStore store;
     late RecordingNotifications notifications;
     late FakeConnectivity connectivity;
@@ -93,23 +129,31 @@ void main() {
       final client = SupabaseClient(
         'https://test.supabase.co',
         'test-anon-key',
-        accessToken: () async => 'test-access-token',
-        httpClient: MockClient((request) async {
-          requests.add(request);
-          if (request.method == 'GET') {
-            return http.Response(
-              jsonEncode([]),
-              200,
-              headers: {'content-type': 'application/json'},
-              request: request,
-            );
-          }
-          return http.Response('', 201, request: request);
-        }),
       );
+      apiClient = MockClient((request) async {
+        requests.add(request);
+        if (request.method == 'GET') {
+          return http.Response(
+            jsonEncode([]),
+            200,
+            headers: {'content-type': 'application/json'},
+            request: request,
+          );
+        }
+        return http.Response(
+          '',
+          request.method == 'DELETE' ? 204 : 200,
+          request: request,
+        );
+      });
       sync = SyncService(
         store: store,
-        api: ContentApi(client),
+        api: ContentApi(
+          client,
+          baseUri: Uri.parse('https://api.voxa.test/api/v1'),
+          httpClient: apiClient,
+          tokenProvider: () => 'test-access-token',
+        ),
         connectivity: connectivity,
         notifications: notifications,
         hasSession: () => true,
@@ -139,7 +183,7 @@ void main() {
     test('não envia nada em dados móveis', () async {
       await sync.onLocalChange();
       expect(sync.pending, 2);
-      expect(requests.where((r) => r.method == 'POST'), isEmpty);
+      expect(requests, isEmpty);
       expect(notifications.events, isEmpty);
     });
 
@@ -149,10 +193,10 @@ void main() {
       await sync.sync(showNotifications: true);
 
       expect(sync.pending, 0);
-      expect(
-        requests.where((r) => r.method == 'POST').map((r) => r.url.path),
-        ['/rest/v1/prancha', '/rest/v1/prancha_cartao'],
-      );
+      expect(requests.where((r) => r.method == 'PUT').map((r) => r.url.path), [
+        '/api/v1/pranchas/b1',
+        '/api/v1/pranchas/b1/cartoes/c1',
+      ]);
       expect(notifications.events, [
         'progresso 0/2',
         'progresso 1/2',

@@ -9,6 +9,15 @@ alter table public.cartao
   add column if not exists arasaac_id text,
   alter column categoria_id drop not null;
 
+grant select, insert, update on public.usuario to authenticated;
+alter table public.usuario enable row level security;
+
+drop policy if exists "Voxa users manage own account" on public.usuario;
+create policy "Voxa users manage own account"
+  on public.usuario for all to authenticated
+  using (id = (select auth.uid()))
+  with check (id = (select auth.uid()));
+
 grant select, insert, update, delete
   on public.prancha, public.cartao, public.prancha_cartao
   to authenticated;

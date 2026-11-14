@@ -12,7 +12,6 @@ import java.util.UUID;
 public class Cartao {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -24,6 +23,9 @@ public class Cartao {
 
     @Column(name = "caminho_imagem")
     private String caminhoImagem;
+
+    @Column(name = "imagem_storage_path")
+    private String imagemStoragePath;
 
     @Column(name = "caminho_audio")
     private String caminhoAudio;
@@ -54,6 +56,8 @@ public class Cartao {
     public void setTexto(String texto) { this.texto = texto; }
     public String getCaminhoImagem() { return caminhoImagem; }
     public void setCaminhoImagem(String caminhoImagem) { this.caminhoImagem = caminhoImagem; }
+    public String getImagemStoragePath() { return imagemStoragePath; }
+    public void setImagemStoragePath(String imagemStoragePath) { this.imagemStoragePath = imagemStoragePath; }
     public String getCaminhoAudio() { return caminhoAudio; }
     public void setCaminhoAudio(String caminhoAudio) { this.caminhoAudio = caminhoAudio; }
     public String getIcone() { return icone; }

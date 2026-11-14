@@ -1,6 +1,8 @@
 import 'dart:convert';
 
-/// Operação pendente de envio ao Supabase (fila "outbox").
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Operação pendente de envio à API (fila "outbox").
 ///
 /// Cada alteração feita sem Wi-Fi vira uma linha nesta fila, na ordem em que
 /// aconteceu. Ao conectar no Wi-Fi o SyncService envia uma a uma.
@@ -127,7 +129,7 @@ abstract class LocalContentStore {
 }
 
 /// Implementação em memória, usada nos testes e como reserva se o SQLite não
-/// puder ser aberto (ex.: execução no navegador).
+/// puder ser aberto no mobile.
 class InMemoryContentStore implements LocalContentStore {
   final Map<String, Map<String, dynamic>> _boards = {};
   final Map<String, Map<String, dynamic>> _cards = {};
@@ -142,11 +144,15 @@ class InMemoryContentStore implements LocalContentStore {
   @override
   Future<LocalProfileContent?> loadProfileContent(String perfilId) async {
     if (!_lastPull.containsKey(perfilId)) return null;
-    final boards = _boards.values
-        .where((b) => b['perfil_id'] == perfilId)
-        .map((b) => Map<String, dynamic>.from(b))
-        .toList()
-      ..sort((a, b) => (a['ordem'] as int? ?? 0).compareTo(b['ordem'] as int? ?? 0));
+    final boards =
+        _boards.values
+            .where((b) => b['perfil_id'] == perfilId)
+            .map((b) => Map<String, dynamic>.from(b))
+            .toList()
+          ..sort(
+            (a, b) =>
+                (a['ordem'] as int? ?? 0).compareTo(b['ordem'] as int? ?? 0),
+          );
     final boardIds = boards.map((b) => b['id']).toSet();
     return LocalProfileContent(
       boards: boards,
@@ -205,8 +211,12 @@ class InMemoryContentStore implements LocalContentStore {
 
   @override
   Future<void> upsertLink(Map<String, dynamic> row) async =>
-      _links[_linkKey(row['prancha_id'] as String, row['cartao_id'] as String)] =
-          Map<String, dynamic>.from(row);
+      _links[_linkKey(
+        row['prancha_id'] as String,
+        row['cartao_id'] as String,
+      )] = Map<String, dynamic>.from(
+        row,
+      );
 
   @override
   Future<void> deleteLink(String pranchaId, String cartaoId) async =>
@@ -249,7 +259,8 @@ class InMemoryContentStore implements LocalContentStore {
   Future<int> pendingCount() async => _outbox.length;
 
   @override
-  Future<void> markDone(int id) async => _outbox.removeWhere((op) => op.id == id);
+  Future<void> markDone(int id) async =>
+      _outbox.removeWhere((op) => op.id == id);
 
   @override
   Future<void> markFailed(int id, String error) async {
@@ -276,4 +287,159 @@ class InMemoryContentStore implements LocalContentStore {
 
   @override
   Future<CatalogData?> loadCatalog() async => _catalog;
+
+  Map<String, dynamic> _persistentState() => {
+    'boards': _boards.values.toList(),
+    'cards': _cards.values.toList(),
+    'links': _links.values.toList(),
+    'lastPull': {
+      for (final entry in _lastPull.entries)
+        entry.key: entry.value.toIso8601String(),
+    },
+    'outbox': _outbox.map((operation) => operation.toRow()).toList(),
+    'nextOutboxId': _nextOutboxId,
+  };
+
+  void _restorePersistentState(Map<String, dynamic> state) {
+    for (final value in state['boards'] as List? ?? const []) {
+      final row = Map<String, dynamic>.from(value as Map);
+      _boards[row['id'] as String] = row;
+    }
+    for (final value in state['cards'] as List? ?? const []) {
+      final row = Map<String, dynamic>.from(value as Map);
+      _cards[row['id'] as String] = row;
+    }
+    for (final value in state['links'] as List? ?? const []) {
+      final row = Map<String, dynamic>.from(value as Map);
+      _links[_linkKey(
+            row['prancha_id'] as String,
+            row['cartao_id'] as String,
+          )] =
+          row;
+    }
+    final lastPull = state['lastPull'] as Map? ?? const {};
+    for (final entry in lastPull.entries) {
+      final date = DateTime.tryParse(entry.value as String);
+      if (date != null) _lastPull[entry.key as String] = date;
+    }
+    for (final value in state['outbox'] as List? ?? const []) {
+      _outbox.add(
+        OutboxOperation.fromRow(Map<String, Object?>.from(value as Map)),
+      );
+    }
+    _nextOutboxId =
+        state['nextOutboxId'] as int? ??
+        (_outbox.fold<int>(
+              0,
+              (max, operation) =>
+                  (operation.id ?? 0) > max ? operation.id ?? 0 : max,
+            ) +
+            1);
+  }
+}
+
+/// Persistência offline do Flutter Web usando o armazenamento do navegador.
+class SharedPreferencesContentStore extends InMemoryContentStore {
+  SharedPreferencesContentStore._(this._preferences);
+
+  static const _stateKey = 'voxa.web.content.v1';
+  final SharedPreferences _preferences;
+
+  static Future<SharedPreferencesContentStore> open() async {
+    final preferences = await SharedPreferences.getInstance();
+    final store = SharedPreferencesContentStore._(preferences);
+    final encoded = preferences.getString(_stateKey);
+    if (encoded != null) {
+      store._restorePersistentState(
+        Map<String, dynamic>.from(jsonDecode(encoded) as Map),
+      );
+    }
+    return store;
+  }
+
+  Future<void> _persist() async {
+    await _preferences.setString(_stateKey, jsonEncode(_persistentState()));
+  }
+
+  @override
+  Future<void> replaceProfileContent(
+    String perfilId, {
+    required List<Map<String, dynamic>> boards,
+    required List<Map<String, dynamic>> cards,
+    required List<Map<String, dynamic>> links,
+  }) async {
+    await super.replaceProfileContent(
+      perfilId,
+      boards: boards,
+      cards: cards,
+      links: links,
+    );
+    await _persist();
+  }
+
+  @override
+  Future<void> upsertBoard(Map<String, dynamic> row) async {
+    await super.upsertBoard(row);
+    await _persist();
+  }
+
+  @override
+  Future<void> deleteBoard(String id) async {
+    await super.deleteBoard(id);
+    await _persist();
+  }
+
+  @override
+  Future<void> upsertCard(Map<String, dynamic> row) async {
+    await super.upsertCard(row);
+    await _persist();
+  }
+
+  @override
+  Future<void> deleteCard(String id) async {
+    await super.deleteCard(id);
+    await _persist();
+  }
+
+  @override
+  Future<void> upsertLink(Map<String, dynamic> row) async {
+    await super.upsertLink(row);
+    await _persist();
+  }
+
+  @override
+  Future<void> deleteLink(String pranchaId, String cartaoId) async {
+    await super.deleteLink(pranchaId, cartaoId);
+    await _persist();
+  }
+
+  @override
+  Future<void> deleteLinksOfBoard(String pranchaId) async {
+    await super.deleteLinksOfBoard(pranchaId);
+    await _persist();
+  }
+
+  @override
+  Future<void> deleteProfile(String perfilId) async {
+    await super.deleteProfile(perfilId);
+    await _persist();
+  }
+
+  @override
+  Future<void> enqueue(OutboxOperation operation) async {
+    await super.enqueue(operation);
+    await _persist();
+  }
+
+  @override
+  Future<void> markDone(int id) async {
+    await super.markDone(id);
+    await _persist();
+  }
+
+  @override
+  Future<void> markFailed(int id, String error) async {
+    await super.markFailed(id, error);
+    await _persist();
+  }
 }

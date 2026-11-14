@@ -59,6 +59,7 @@ macos/Flutter/ephemeral/
 # Environment & Secrets
 .env
 .env.*
+!.env.example
 *.jks
 *.keystore
 key.properties
