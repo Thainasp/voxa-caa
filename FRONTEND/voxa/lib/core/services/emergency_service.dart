@@ -14,21 +14,6 @@ import 'package:voxa/models/user_model.dart';
 
 enum EmergencyState { idle, sending, sentByServer, openedSmsApp, failed }
 
-/// Botão de emergência (Correções item 5 / RF09 / RF10 / BRADWBK CR8).
-///
-/// Contrato STOMP com o back-end Spring Boot (documentado no Voxa.doc):
-/// - Conexão:  BACKEND_WS_URL (ex.: http://10.0.2.2:8080/ws, SockJS)
-/// - Envio:    SEND      /app/alerta
-/// - Escuta:   SUBSCRIBE /topic/alertas/{perfilId}
-///
-/// O servidor grava o alerta, envia o SMS ao telefone cadastrado do
-/// responsável e publica no tópico o resultado (status SMS_ENVIADO ou
-/// SMS_FALHOU), que também aparece em tempo real no cliente web do cuidador.
-///
-/// Plano B: se o servidor não responder (sem internet, servidor fora do ar ou
-/// falha no SMS), o app abre o aplicativo de SMS do aparelho com a mensagem
-/// pronta para o telefone cadastrado. O SMS usa a rede celular, então funciona
-/// mesmo sem internet.
 class EmergencyService extends ChangeNotifier {
   EmergencyService({ProfileApi? profileApi}) : _profileApi = profileApi;
 
@@ -36,13 +21,23 @@ class EmergencyService extends ChangeNotifier {
   ProfileApi get _api => _profileApi ??= ProfileApi();
 
   static const _phoneCacheKey = 'voxa.emergency.phone';
-  static const _serverTimeout = Duration(seconds: 10);
+  static const _customWsUrlKey = 'voxa.emergency.ws_url';
+  static const _fallbackDemoPhone = '11999990000';
 
   EmergencyState _state = EmergencyState.idle;
   String? _lastMessage;
 
+  String? _serverStatus;
+  String? _maskedPhone;
+  String? _alertaId;
+  final List<String> _wsEvents = [];
+
   EmergencyState get state => _state;
   String? get lastMessage => _lastMessage;
+  String? get serverStatus => _serverStatus;
+  String? get maskedPhone => _maskedPhone;
+  String? get alertaId => _alertaId;
+  List<String> get wsEvents => List.unmodifiable(_wsEvents);
   bool get isSending => _state == EmergencyState.sending;
 
   void _set(EmergencyState state, [String? message]) {
@@ -51,11 +46,83 @@ class EmergencyService extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _addWsEvent(
+    String logEntry, {
+    String? status,
+    String? phone,
+    String? id,
+  }) {
+    if (status != null) _serverStatus = status;
+    if (phone != null && phone.isNotEmpty) _maskedPhone = phone;
+    if (id != null && id.isNotEmpty) _alertaId = id;
+    _wsEvents.add(logEntry);
+    notifyListeners();
+  }
+
+  /// Permite configurar o IP do servidor direto no celular físico sem recompilar o APK.
+  Future<void> setCustomWsUrl(String? url) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (url == null || url.trim().isEmpty) {
+      await prefs.remove(_customWsUrlKey);
+    } else {
+      await prefs.setString(_customWsUrlKey, _normalizeSockJsUrl(url.trim()));
+    }
+  }
+
+  Future<String> getEffectiveWsUrl() async {
+    final urls = await _candidateWsUrls();
+    return urls.first;
+  }
+
+  String _normalizeSockJsUrl(String raw) {
+    var url = raw.trim();
+    if (url.startsWith('ws://')) url = 'http://${url.substring(5)}';
+    if (url.startsWith('wss://')) url = 'https://${url.substring(6)}';
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'http://$url';
+    }
+    if (!url.endsWith('/ws')) {
+      url = url.endsWith('/') ? '${url}ws' : '$url/ws';
+    }
+    return url;
+  }
+
+  /// Monta a lista de URLs para funcionar no Chrome Web, Emulador e APK Físico.
+  Future<List<String>> _candidateWsUrls() async {
+    final prefs = await SharedPreferences.getInstance();
+    final customUrl = prefs.getString(_customWsUrlKey);
+    final envUrl = dotenv.maybeGet('BACKEND_WS_URL')?.trim();
+
+    final candidates = <String>[];
+
+    if (customUrl != null && customUrl.isNotEmpty) {
+      candidates.add(_normalizeSockJsUrl(customUrl));
+    }
+
+    if (kIsWeb) {
+      // No Chrome (flutter run -d chrome), 10.0.2.2 não existe; usa localhost:8080
+      if (envUrl != null && envUrl.isNotEmpty && !envUrl.contains('10.0.2.2')) {
+        candidates.add(_normalizeSockJsUrl(envUrl));
+      }
+      candidates.add('http://localhost:8080/ws');
+    } else {
+      // No Android (APK físico ou Emulador)
+      // 1. Tenta localhost primeiro se estiver no cabo USB (adb reverse tcp:8080 tcp:8080)
+      candidates.add('http://localhost:8080/ws');
+      // 2. Tenta a URL do .env (ex.: IP da rede Wi-Fi ou 10.0.2.2 do emulador)
+      if (envUrl != null && envUrl.isNotEmpty) {
+        candidates.add(_normalizeSockJsUrl(envUrl));
+      }
+    }
+
+    return candidates.toSet().toList();
+  }
+
   /// Guarda o telefone do responsável no aparelho para o plano B offline.
   Future<void> cachePhone(String usuarioId) async {
     try {
       final phone = await _api.fetchResponsiblePhone(usuarioId);
-      if (phone == null) return;
+      if (phone == null || phone.isEmpty) return;
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_phoneCacheKey, phone);
     } catch (_) {
@@ -63,62 +130,111 @@ class EmergencyService extends ChangeNotifier {
     }
   }
 
-  Future<String?> _cachedPhone() async {
+  Future<String> _resolvePhoneForFallback(User? authUser) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_phoneCacheKey);
+    var cached = prefs.getString(_phoneCacheKey);
+    if (cached != null && cached.isNotEmpty) return cached;
+
+    if (authUser != null) {
+      await cachePhone(authUser.id);
+      cached = prefs.getString(_phoneCacheKey);
+      if (cached != null && cached.isNotEmpty) return cached;
+
+      final metaPhone =
+          authUser.userMetadata?['telefone']?.toString() ??
+          authUser.userMetadata?['phone']?.toString() ??
+          authUser.phone;
+      if (metaPhone != null && metaPhone.isNotEmpty) return metaPhone;
+    }
+
+    return _fallbackDemoPhone;
   }
 
   Future<void> sendAlert({required UserModel? activeProfile}) async {
     if (isSending) return;
-    _set(EmergencyState.sending, 'Enviando alerta...');
+    _wsEvents.clear();
+    _serverStatus = 'CONECTANDO';
+    _maskedPhone = null;
+    _alertaId = null;
+    _set(EmergencyState.sending, 'Conectando ao servidor WebSocket...');
 
     final authUser = Supabase.instance.client.auth.currentUser;
     final perfilNome = activeProfile?.name ?? 'Usuário do Voxa';
     final mensagem =
         'ALERTA VOXA: $perfilNome acionou o botão de emergência e precisa de ajuda.';
 
-    final sentByServer = authUser != null &&
+    final sentByServer =
+        authUser != null &&
         activeProfile != null &&
-        await _sendViaStomp(
+        await _sendViaStompWithFallbackUrls(
           usuarioId: authUser.id,
           perfil: activeProfile,
           mensagem: mensagem,
         );
 
     if (sentByServer) {
+      final destino = (_maskedPhone != null && _maskedPhone!.isNotEmpty)
+          ? ' ($_maskedPhone)'
+          : '';
       _set(
         EmergencyState.sentByServer,
-        'Alerta enviado. O responsável vai receber um SMS.',
+        'Alerta concluído via WebSocket! Status: SMS_ENVIADO$destino.',
       );
       return;
     }
 
-    final phone = await _cachedPhone();
-    if (phone == null) {
+    // Plano B (Celular sem Wi-Fi / Servidor desligado): abre o app de SMS nativo
+    final phone = await _resolvePhoneForFallback(authUser);
+
+    if (kIsWeb) {
       _set(
         EmergencyState.failed,
-        'Não foi possível enviar o alerta e não há telefone cadastrado.',
+        'Servidor WebSocket offline. No celular (APK), o Plano B abriria o SMS para $phone.',
       );
       return;
     }
+
     final uri = Uri.parse('sms:$phone?body=${Uri.encodeComponent(mensagem)}');
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    _set(
-      opened ? EmergencyState.openedSmsApp : EmergencyState.failed,
-      opened
-          ? 'Sem conexão com o servidor: confirme o envio no app de SMS.'
-          : 'Não foi possível abrir o SMS. Ligue para o responsável.',
-    );
+    try {
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      _set(
+        opened ? EmergencyState.openedSmsApp : EmergencyState.failed,
+        opened
+            ? 'Modo Offline (Plano B): confirme o envio no app de SMS do aparelho.'
+            : 'Não foi possível abrir o app de SMS. Ligue para o responsável.',
+      );
+    } catch (_) {
+      _set(
+        EmergencyState.failed,
+        'Não foi possível abrir o app de SMS. Ligue para o responsável.',
+      );
+    }
   }
 
-  Future<bool> _sendViaStomp({
+  Future<bool> _sendViaStompWithFallbackUrls({
     required String usuarioId,
     required UserModel perfil,
     required String mensagem,
   }) async {
-    final url = dotenv.maybeGet('BACKEND_WS_URL');
-    if (url == null || url.isEmpty) return false;
+    final urls = await _candidateWsUrls();
+    for (final url in urls) {
+      final ok = await _tryStompOnUrl(
+        url: url,
+        usuarioId: usuarioId,
+        perfil: perfil,
+        mensagem: mensagem,
+      );
+      if (ok) return true;
+    }
+    return false;
+  }
 
+  Future<bool> _tryStompOnUrl({
+    required String url,
+    required String usuarioId,
+    required UserModel perfil,
+    required String mensagem,
+  }) async {
     final token = Supabase.instance.client.auth.currentSession?.accessToken;
     final clienteId = generateUuidV4();
     final result = Completer<bool>();
@@ -127,6 +243,8 @@ class EmergencyService extends ChangeNotifier {
     void finish(bool value) {
       if (!result.isCompleted) result.complete(value);
     }
+
+    _addWsEvent('Tentando WebSocket em $url...', status: 'CONECTANDO');
 
     client = StompClient(
       config: StompConfig.sockJS(
@@ -137,32 +255,87 @@ class EmergencyService extends ChangeNotifier {
         webSocketConnectHeaders: {
           if (token != null) 'Authorization': 'Bearer $token',
         },
-        reconnectDelay: Duration.zero, // uma tentativa; o plano B cuida do resto
-        connectionTimeout: const Duration(seconds: 5),
+        reconnectDelay: Duration.zero,
+        connectionTimeout: const Duration(seconds: 3),
         onConnect: (frame) {
+          _addWsEvent(
+            'Conectado! Inscrito em /topic/alertas/${perfil.id}',
+            status: 'CONECTADO',
+          );
+
           client?.subscribe(
             destination: '/topic/alertas/${perfil.id}',
             callback: (event) {
               try {
                 final data = jsonDecode(event.body ?? '{}') as Map;
-                if (data['clienteId'] != clienteId) return;
-                final status = data['status']?.toString();
-                if (status == 'SMS_ENVIADO') finish(true);
-                if (status == 'SMS_FALHOU') finish(false);
+                if (data['clienteId'] != null &&
+                    data['clienteId'].toString() != clienteId) {
+                  return;
+                }
+                final status = data['status']?.toString() ?? '';
+                final telefoneMascarado = data['telefoneMascarado']?.toString();
+                final alertaId = data['alertaId']?.toString();
+
+                if (status == 'RECEBIDO') {
+                  _addWsEvent(
+                    'Recebido do tópico: status RECEBIDO',
+                    status: 'RECEBIDO',
+                    phone: telefoneMascarado,
+                    id: alertaId,
+                  );
+                } else if (status == 'SMS_ENVIADO') {
+                  _addWsEvent(
+                    'Recebido do tópico: status SMS_ENVIADO (${telefoneMascarado ?? ""})',
+                    status: 'SMS_ENVIADO',
+                    phone: telefoneMascarado,
+                    id: alertaId,
+                  );
+                  Future.delayed(
+                    const Duration(milliseconds: 500),
+                    () => finish(true),
+                  );
+                } else if (status == 'SMS_FALHOU') {
+                  _addWsEvent(
+                    'Recebido do tópico: status SMS_FALHOU',
+                    status: 'SMS_FALHOU',
+                    phone: telefoneMascarado,
+                    id: alertaId,
+                  );
+                  finish(false);
+                }
               } catch (_) {}
             },
           );
-          client?.send(
-            destination: '/app/alerta',
-            body: jsonEncode({
-              'clienteId': clienteId,
-              'usuarioId': usuarioId,
-              'perfilId': perfil.id,
-              'perfilNome': perfil.name,
-              'mensagem': mensagem,
-              'enviadoEm': DateTime.now().toUtc().toIso8601String(),
-            }),
+
+          client?.subscribe(
+            destination: '/user/queue/erros',
+            callback: (event) {
+              try {
+                final data = jsonDecode(event.body ?? '{}') as Map;
+                final erroMsg =
+                    data['erro']?.toString() ?? 'Erro retornado pelo servidor.';
+                _lastMessage = erroMsg;
+                _addWsEvent('Erro do servidor: $erroMsg', status: 'ERRO');
+              } catch (_) {}
+              finish(false);
+            },
           );
+
+          Future.delayed(const Duration(milliseconds: 150), () {
+            if (result.isCompleted) return;
+            _addWsEvent('Enviando SEND /app/alerta...');
+            client?.send(
+              destination: '/app/alerta',
+              body: jsonEncode({
+                'clienteId': clienteId,
+                'usuarioId': usuarioId,
+                'perfilId': perfil.id,
+                'perfilNome': perfil.name,
+                'mensagem': mensagem,
+                'enviadoEm': DateTime.now().toUtc().toIso8601String(),
+              }),
+            );
+          });
         },
         onWebSocketError: (_) => finish(false),
         onStompError: (_) => finish(false),
@@ -172,12 +345,18 @@ class EmergencyService extends ChangeNotifier {
 
     client.activate();
     final ok = await result.future.timeout(
-      _serverTimeout,
+      const Duration(seconds: 4),
       onTimeout: () => false,
     );
     client.deactivate();
     return ok;
   }
 
-  void reset() => _set(EmergencyState.idle);
+  void reset() {
+    _wsEvents.clear();
+    _serverStatus = null;
+    _maskedPhone = null;
+    _alertaId = null;
+    _set(EmergencyState.idle);
+  }
 }

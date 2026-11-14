@@ -9,9 +9,9 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 
 /**
  * Servidor WebSocket com STOMP.
- * - Handshake:  /ws (com fallback SockJS)
- * - Envio:      /app/** (ex.: /app/alerta)
- * - Inscrição:  /topic/** (ex.: /topic/alertas/{perfilId})
+ * - Handshake: /ws (WebSocket nativo e fallback SockJS)
+ * - Envio: /app/** (ex.: /app/alerta)
+ * - Inscrição: /topic/** (ex.: /topic/alertas/{perfilId}) e /user/queue/erros
  */
 @Configuration
 @EnableWebSocketMessageBroker
@@ -22,12 +22,21 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws").setAllowedOriginPatterns(allowedOrigins).withSockJS();
+        // Permite conexão WebSocket pura (ws://.../ws)
+        registry.addEndpoint("/ws")
+                .setAllowedOriginPatterns(allowedOrigins);
+
+        // Permite conexão via SockJS (http://.../ws) usada pelo stomp_dart_client e
+        // painel web
+        registry.addEndpoint("/ws")
+                .setAllowedOriginPatterns(allowedOrigins)
+                .withSockJS();
     }
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
         registry.enableSimpleBroker("/topic", "/queue");
         registry.setApplicationDestinationPrefixes("/app");
+        registry.setUserDestinationPrefix("/user");
     }
 }
