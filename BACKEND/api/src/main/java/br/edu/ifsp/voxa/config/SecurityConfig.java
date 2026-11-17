@@ -14,6 +14,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.web.client.RestTemplate;
 
 import java.util.Set;
 
@@ -40,7 +41,8 @@ public class SecurityConfig {
     @Bean
     JwtDecoder jwtDecoder(
             @Value("${voxa.security.supabase-url:}") String supabaseUrl,
-            @Value("${voxa.security.supabase-jwt-secret:}") String jwtSecret) {
+            @Value("${voxa.security.supabase-jwt-secret:}") String jwtSecret,
+            @Value("${voxa.security.supabase-anon-key:}") String supabaseAnonKey) {
         if (!jwtSecret.isBlank()) {
             NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(
                     new SecretKeySpec(jwtSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"))
@@ -53,8 +55,16 @@ public class SecurityConfig {
         }
         if (!supabaseUrl.isBlank()) {
             String issuer = supabaseUrl.replaceAll("/+$", "") + "/auth/v1";
+            RestTemplate restTemplate = new RestTemplate();
+            if (!supabaseAnonKey.isBlank()) {
+                restTemplate.getInterceptors().add((request, body, execution) -> {
+                    request.getHeaders().set("apikey", supabaseAnonKey);
+                    return execution.execute(request, body);
+                });
+            }
             NimbusJwtDecoder decoder = NimbusJwtDecoder
                     .withJwkSetUri(issuer + "/.well-known/jwks.json")
+                    .restOperations(restTemplate)
                     .jwsAlgorithms(algorithms -> algorithms.addAll(
                             Set.of(SignatureAlgorithm.ES256, SignatureAlgorithm.RS256)))
                     .build();

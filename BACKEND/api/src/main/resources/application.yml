@@ -21,6 +21,7 @@ voxa:
   security:
     supabase-url: ${SUPABASE_URL:}
     supabase-jwt-secret: ${SUPABASE_JWT_SECRET:}
+    supabase-anon-key: ${SUPABASE_ANON_KEY:}
   sms:
     # log = SMS simulado (registrado no console). twilio = envio real.
     provider: ${VOXA_SMS_PROVIDER:log}
