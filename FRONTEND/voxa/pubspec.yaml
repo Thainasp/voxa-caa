@@ -49,6 +49,7 @@ dependencies:
   path_provider: ^2.1.4
   # Detecção de Wi-Fi / dados móveis para a sincronização (item 3)
   connectivity_plus: ^6.1.0
+  uuid: ^4.0.0
   # Notificações nativas com barra de progresso (item 4 / BRADEMO CR3)
   flutter_local_notifications: ^19.4.0
   # Botão de emergência via WebSocket/STOMP (item 5 / BRADWBK CR8)

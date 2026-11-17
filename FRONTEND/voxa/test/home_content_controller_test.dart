@@ -585,14 +585,17 @@ void main() {
     await HomeContentController.loadContentForProfile(_profileId);
 
     expect(
-      requests.any((request) => request.url.path == '/api/v1/pranchas'),
+      requests.any(
+        (request) =>
+            request.url.path == '/rest/v1/prancha' && request.method == 'GET',
+      ),
       isTrue,
     );
     expect(
       requests.any(
         (request) =>
-            request.url.path.contains('/api/v1/pranchas/') &&
-            request.url.path.endsWith('/cartoes'),
+            request.url.path == '/rest/v1/prancha_cartao' &&
+            request.method == 'GET',
       ),
       isTrue,
     );
@@ -766,47 +769,29 @@ void main() {
       await HomeContentController.deleteCard(updatedCard);
       await HomeContentController.deleteBoard(board['key'] as String);
 
-      expect(
-        requests.any(
-          (request) =>
-              request.url.path == '/api/v1/pranchas' &&
-              request.method == 'POST',
-        ),
-        isTrue,
+      bool called(String method, String table) => requests.any(
+        (request) =>
+            request.method == method &&
+            request.url.path == '/rest/v1/$table',
       );
+
+      // Criar prancha e cartão (INSERT) e o vínculo N:N (upsert = POST).
+      expect(called('POST', 'prancha'), isTrue);
+      expect(called('POST', 'cartao'), isTrue);
+      expect(called('POST', 'prancha_cartao'), isTrue);
+      // Editar prancha, cartão e a ordem do vínculo (UPDATE = PATCH).
+      expect(called('PATCH', 'prancha'), isTrue);
+      expect(called('PATCH', 'cartao'), isTrue);
+      expect(called('PATCH', 'prancha_cartao'), isTrue);
+      // Excluir vínculo, cartão órfão e prancha.
+      expect(called('DELETE', 'prancha_cartao'), isTrue);
+      expect(called('DELETE', 'cartao'), isTrue);
+      expect(called('DELETE', 'prancha'), isTrue);
+      // Nada deve ir para a API Spring.
       expect(
-        requests.any(
-          (request) =>
-              request.url.path.startsWith('/api/v1/pranchas/') &&
-              request.method == 'PUT',
-        ),
-        isTrue,
+        requests.any((request) => request.url.path.contains('/api/v1/')),
+        isFalse,
       );
-      expect(
-        requests.any(
-          (request) =>
-              request.url.path == '/api/v1/cartoes' && request.method == 'POST',
-        ),
-        isTrue,
-      );
-      expect(
-        requests.any(
-          (request) =>
-              request.url.path.contains('/api/v1/pranchas/') &&
-              request.url.path.contains('/cartoes/') &&
-              request.method == 'PUT',
-        ),
-        isTrue,
-      );
-      expect(
-        requests.any(
-          (request) =>
-              request.url.path.startsWith('/api/v1/cartoes/') &&
-              request.method == 'PUT',
-        ),
-        isTrue,
-      );
-      expect(requests.any((request) => request.method == 'DELETE'), isTrue);
     },
   );
 }

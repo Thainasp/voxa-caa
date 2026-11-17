@@ -6,114 +6,110 @@ import 'package:http/testing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:voxa/core/data/remote/content_api.dart';
 
+SupabaseClient _client(MockClient httpClient) => SupabaseClient(
+  'https://test.supabase.co',
+  'test-anon-key',
+  accessToken: () async => 'session-token',
+  httpClient: httpClient,
+);
+
+http.Response _json(Object body, http.Request request) => http.Response(
+  jsonEncode(body),
+  200,
+  headers: {'content-type': 'application/json'},
+  request: request,
+);
+
 void main() {
-  test(
-    'usa a API com bearer do Supabase e converte o conteúdo ao formato local',
-    () async {
-      final requests = <http.Request>[];
-      final client = SupabaseClient(
-        'https://test.supabase.co',
-        'test-anon-key',
-      );
-      final api = ContentApi(
-        client,
-        baseUri: Uri.parse('https://api.voxa.test/api/v1'),
-        tokenProvider: () => 'session-token',
-        httpClient: MockClient((request) async {
+  test('lê direto do Supabase e devolve o conteúdo no formato local', () async {
+    final requests = <http.Request>[];
+    final api = ContentApi(
+      _client(
+        MockClient((request) async {
           requests.add(request);
           final body = switch (request.url.path) {
-            '/api/v1/pranchas' => [
+            '/rest/v1/prancha' => [
               {
                 'id': 'board-1',
-                'perfilId': 'profile-1',
+                'perfil_id': 'profile-1',
                 'chave': 'rotina',
                 'nome': 'Rotina',
                 'ordem': 2,
               },
             ],
-            '/api/v1/pranchas/board-1/cartoes' => [
-              {'cartaoId': 'card-1', 'ordem': 1},
+            '/rest/v1/prancha_cartao' => [
+              {'prancha_id': 'board-1', 'cartao_id': 'card-1', 'ordem': 1},
             ],
-            '/api/v1/cartoes' => [
+            '/rest/v1/cartao' => [
               {
                 'id': 'card-1',
-                'perfilId': 'profile-1',
+                'perfil_id': 'profile-1',
                 'texto': 'Comer',
-                'corHex': '#ff00896b',
-                'favorito': false,
-                'frequenciaUso': 0,
+                'cor_hex': '#ff00896b',
               },
             ],
             _ => throw StateError('Endpoint inesperado: ${request.url}'),
           };
-          return http.Response(
-            jsonEncode(body),
-            200,
-            headers: {'content-type': 'application/json'},
-            request: request,
-          );
+          return _json(body, request);
         }),
-      );
+      ),
+    );
 
-      final content = await api.fetchProfileContent('profile-1');
+    final content = await api.fetchProfileContent('profile-1');
 
-      expect(content.boards.single['nome'], 'Rotina');
-      expect(content.boards.single['perfil_id'], 'profile-1');
-      expect(content.cards.single['texto'], 'Comer');
-      expect(content.links.single, {
-        'prancha_id': 'board-1',
-        'cartao_id': 'card-1',
-        'ordem': 1,
-      });
-      expect(requests, hasLength(3));
-      expect(
-        requests.every(
-          (request) =>
-              request.headers['Authorization'] == 'Bearer session-token',
-        ),
-        isTrue,
-      );
-      expect(requests.first.url.queryParameters['perfilId'], 'profile-1');
-    },
-  );
+    expect(content.boards.single['nome'], 'Rotina');
+    expect(content.boards.single['perfil_id'], 'profile-1');
+    expect(content.cards.single['texto'], 'Comer');
+    expect(content.cards.single['is_favorito'], false);
+    expect(content.links.single, {
+      'prancha_id': 'board-1',
+      'cartao_id': 'card-1',
+      'ordem': 1,
+    });
+    expect(requests, hasLength(3));
+    expect(
+      requests.every(
+        (r) => r.headers['Authorization'] == 'Bearer session-token',
+      ),
+      isTrue,
+    );
+    expect(requests.first.url.queryParameters['perfil_id'], 'eq.profile-1');
+  });
 
-  test(
-    'upsert envia os IDs locais e mantém Supabase como identidade remota',
-    () async {
-      final requests = <http.Request>[];
-      final api = ContentApi(
-        SupabaseClient('https://test.supabase.co', 'test-anon-key'),
-        baseUri: Uri.parse('https://api.voxa.test/api/v1'),
-        tokenProvider: () => 'session-token',
-        httpClient: MockClient((request) async {
+  test('upsert envia os IDs locais para o Supabase', () async {
+    final requests = <http.Request>[];
+    final api = ContentApi(
+      _client(
+        MockClient((request) async {
           requests.add(request);
           return http.Response('', 204, request: request);
         }),
-      );
+      ),
+    );
 
-      await api.upsertBoard({
-        'id': 'offline-board-id',
-        'perfil_id': 'profile-1',
-        'chave': 'rotina',
-        'nome': 'Rotina',
-        'ordem': 3,
-        'imagem_storage_path': 'profile-1/board.png',
-      });
+    await api.upsertBoard({
+      'id': 'offline-board-id',
+      'perfil_id': 'profile-1',
+      'chave': 'rotina',
+      'nome': 'Rotina',
+      'ordem': 3,
+      'imagem_storage_path': 'profile-1/board.png',
+      'campo_inexistente': 'deve ser ignorado',
+    });
 
-      expect(requests.single.method, 'PUT');
-      expect(requests.single.url.path, '/api/v1/pranchas/offline-board-id');
-      expect(requests.single.headers['Authorization'], 'Bearer session-token');
-      expect(jsonDecode(requests.single.body), {
-        'id': 'offline-board-id',
-        'perfilId': 'profile-1',
-        'chave': 'rotina',
-        'nome': 'Rotina',
-        'icone': null,
-        'imagemUrl': null,
-        'imagemStoragePath': 'profile-1/board.png',
-        'caminhoAudio': null,
-        'ordem': 3,
-      });
-    },
-  );
+    final request = requests.single;
+    expect(request.method, 'POST');
+    expect(request.url.path, '/rest/v1/prancha');
+    expect(request.headers['Prefer'], contains('resolution=merge-duplicates'));
+    final decoded = jsonDecode(request.body);
+    final body = decoded is List ? decoded.single : decoded;
+    expect(body, {
+      'id': 'offline-board-id',
+      'perfil_id': 'profile-1',
+      'chave': 'rotina',
+      'nome': 'Rotina',
+      'ordem': 3,
+      'imagem_storage_path': 'profile-1/board.png',
+    });
+  });
 }

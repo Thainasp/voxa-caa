@@ -126,10 +126,6 @@ void main() {
       store = InMemoryContentStore();
       notifications = RecordingNotifications();
       connectivity = FakeConnectivity(NetworkStatus.mobile);
-      final client = SupabaseClient(
-        'https://test.supabase.co',
-        'test-anon-key',
-      );
       apiClient = MockClient((request) async {
         requests.add(request);
         if (request.method == 'GET') {
@@ -140,20 +136,22 @@ void main() {
             request: request,
           );
         }
+        // PostgREST responde 201 (upsert/insert) ou 204 (update/delete).
         return http.Response(
           '',
-          request.method == 'DELETE' ? 204 : 200,
+          request.method == 'POST' ? 201 : 204,
           request: request,
         );
       });
+      final client = SupabaseClient(
+        'https://test.supabase.co',
+        'test-anon-key',
+        accessToken: () async => 'test-access-token',
+        httpClient: apiClient,
+      );
       sync = SyncService(
         store: store,
-        api: ContentApi(
-          client,
-          baseUri: Uri.parse('https://api.voxa.test/api/v1'),
-          httpClient: apiClient,
-          tokenProvider: () => 'test-access-token',
-        ),
+        api: ContentApi(client),
         connectivity: connectivity,
         notifications: notifications,
         hasSession: () => true,
@@ -193,10 +191,17 @@ void main() {
       await sync.sync(showNotifications: true);
 
       expect(sync.pending, 0);
-      expect(requests.where((r) => r.method == 'PUT').map((r) => r.url.path), [
-        '/api/v1/pranchas/b1',
-        '/api/v1/pranchas/b1/cartoes/c1',
+      // Upserts do PostgREST: POST com "Prefer: resolution=merge-duplicates".
+      expect(requests.where((r) => r.method == 'POST').map((r) => r.url.path), [
+        '/rest/v1/prancha',
+        '/rest/v1/prancha_cartao',
       ]);
+      expect(
+        requests
+            .where((r) => r.method == 'POST')
+            .every((r) => r.headers['Authorization'] == 'Bearer test-access-token'),
+        isTrue,
+      );
       expect(notifications.events, [
         'progresso 0/2',
         'progresso 1/2',

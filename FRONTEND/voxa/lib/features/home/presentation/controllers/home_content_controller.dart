@@ -23,10 +23,11 @@ import 'package:voxa/models/user_model.dart';
 /// 1. O catálogo ARASAAC vem do SQLite do aparelho (CatalogRepository).
 /// 2. O conteúdo criado pelo usuário abre direto do SQLite; a nuvem é
 ///    consultada em segundo plano e, quando muda, a Home recarrega.
-/// 3. Alterações com Wi-Fi vão direto à API (e são espelhadas no
+/// 3. Alterações com Wi-Fi vão direto ao Supabase (e são espelhadas no
 ///    SQLite). Sem Wi-Fi, ficam no SQLite e entram na fila de sincronização.
 ///
-/// Toda chamada de rede passa pela [ContentApi] (camada de rede).
+/// Toda chamada de rede passa pela [ContentApi], que fala direto com o
+/// Supabase (PostgREST + RLS + Storage): não depende do Spring Boot.
 class HomeContentController {
   static List boards = [];
   static Map<String, List> cardsByBoard = {};
@@ -56,6 +57,10 @@ class HomeContentController {
   static SupabaseClient? _clientForTesting;
   static LocalContentStore? _testStore;
   static CatalogRepository? _testCatalog;
+
+  /// Mantido só por compatibilidade com os testes antigos. Não é mais usado:
+  /// nos testes, o cliente HTTP deve ser passado ao [SupabaseClient]
+  /// (parâmetro `httpClient`) em [clientForTesting].
   static http.Client? httpClientForTesting;
 
   /// Nos testes o controller usa este cliente, um SQLite em memória, considera
@@ -75,12 +80,7 @@ class HomeContentController {
   static SupabaseClient get _client =>
       _clientForTesting ?? Supabase.instance.client;
   static ContentApi get _api => _testing
-      ? ContentApi(
-          _clientForTesting!,
-          baseUri: Uri.parse('http://localhost:8080/api/v1'),
-          httpClient: httpClientForTesting,
-          tokenProvider: () => 'test-access-token',
-        )
+      ? ContentApi(_clientForTesting!)
       : AppServices.instance.contentApi;
   static LocalContentStore get _store => _testing
       ? (_testStore ??= InMemoryContentStore())

@@ -1,361 +1,413 @@
-import 'dart:convert';
+import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// API REST de pranchas/cartões no Spring; Supabase continua responsável por
-/// Auth, Storage e pela migração legada de conteúdo.
+/// Resultado de [ContentApi.fetchProfileContent].
+class ProfileContent {
+  const ProfileContent({
+    required this.boards,
+    required this.cards,
+    required this.links,
+  });
+
+  final List<Map<String, dynamic>> boards;
+  final List<Map<String, dynamic>> cards;
+  final List<Map<String, dynamic>> links;
+}
+
+/// Camada REMOTA de pranchas/cartões: fala DIRETO com o Supabase
+/// (PostgREST + RLS + Storage). Não depende mais do Spring Boot rodando no
+/// computador, então funciona no APK em qualquer rede.
+///
+/// O SQLite local e a fila de envio continuam sendo do [SyncService] /
+/// LocalContentStore; esta classe só é chamada por eles (e pelo
+/// HomeContentController quando está online).
+///
+/// Os parâmetros [baseUri], [httpClient] e [tokenProvider] existem apenas para
+/// não quebrar quem ainda os passa (AppServices, testes). São ignorados: o
+/// SupabaseClient já envia o JWT da sessão sozinho.
 class ContentApi {
   ContentApi(
     this._client, {
-    Uri? baseUri,
-    http.Client? httpClient,
-    String? Function()? tokenProvider,
-  }) : _baseUri = baseUri ?? _defaultBaseUri(),
-       _httpClient = httpClient ?? http.Client(),
-       _tokenProvider =
-           tokenProvider ?? (() => _client.auth.currentSession?.accessToken);
+    @Deprecated('Ignorado: o app fala direto com o Supabase.') Object? baseUri,
+    @Deprecated('Ignorado: use o httpClient do SupabaseClient.')
+    Object? httpClient,
+    @Deprecated('Ignorado: o SupabaseClient usa o JWT da sessão.')
+    Object? tokenProvider,
+  });
 
   final SupabaseClient _client;
-  final Uri _baseUri;
-  final http.Client _httpClient;
-  final String? Function() _tokenProvider;
 
   static const imageBucket = 'content-images';
   static const catalogBucket = 'arasaac-catalog';
   static const signedUrlLifetimeSeconds = 3600;
 
-  static Uri _defaultBaseUri() {
-    final configured = dotenv.isInitialized
-        ? dotenv.maybeGet('BACKEND_API_URL')?.trim()
-        : null;
-    if (configured != null && configured.isNotEmpty) {
-      return Uri.parse(configured);
-    }
-    return Uri(
-      scheme: 'http',
-      host: kIsWeb || defaultTargetPlatform != TargetPlatform.android
-          ? 'localhost'
-          : '10.0.2.2',
-      port: 8080,
-      path: '/api/v1',
-    );
-  }
+  static const _pageSize = 1000;
+  static const _chunkSize = 100;
 
-  Uri _uri(String path, [Map<String, String?> query = const {}]) {
-    final basePath = _baseUri.path.replaceFirst(RegExp(r'/+$'), '');
-    final suffix = path.replaceFirst(RegExp(r'^/+'), '');
-    return _baseUri.replace(
-      path: '$basePath/$suffix',
-      queryParameters: {
-        ..._baseUri.queryParameters,
-        for (final entry in query.entries)
-          if (entry.value != null) entry.key: entry.value!,
-      },
-    );
-  }
+  static const _boardCols = [
+    'id',
+    'perfil_id',
+    'chave',
+    'nome',
+    'icone',
+    'imagem_url',
+    'imagem_storage_path',
+    'caminho_audio',
+    'ordem',
+  ];
 
-  Future<dynamic> _request(
-    String method,
-    String path, {
-    Map<String, String?> query = const {},
-    Map<String, dynamic>? body,
-  }) async {
-    final token = _tokenProvider();
-    if (token == null || token.isEmpty) {
-      throw const AuthException('Entre na sua conta para acessar o conteúdo.');
-    }
+  static const _cardCols = [
+    'id',
+    'perfil_id',
+    'texto',
+    'caminho_imagem',
+    'imagem_storage_path',
+    'caminho_audio',
+    'icone',
+    'cor_hex',
+    'arasaac_id',
+    'is_favorito',
+  ];
 
-    final request = http.Request(method, _uri(path, query));
-    request.headers.addAll({
-      'Accept': 'application/json',
-      'Authorization': 'Bearer $token',
-      if (body != null) 'Content-Type': 'application/json',
-    });
-    if (body != null) request.body = jsonEncode(body);
+  // ---------------------------------------------------------------- helpers
 
-    final streamed = await _httpClient.send(request);
-    final response = await http.Response.fromStream(streamed);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ContentApiException(
-        response.statusCode,
-        response.body.isEmpty
-            ? response.reasonPhrase ?? 'Erro na API'
-            : response.body,
-      );
-    }
-    if (response.statusCode == 204 || response.body.isEmpty) return null;
-    return jsonDecode(response.body);
-  }
+  static Map<String, dynamic> _pick(
+    Map<String, dynamic> row,
+    List<String> cols,
+  ) => {
+    for (final c in cols)
+      if (row.containsKey(c)) c: row[c],
+  };
 
-  static Map<String, dynamic> _map(dynamic value) =>
-      Map<String, dynamic>.from(value as Map);
+  /// Campos que podem ser alterados num UPDATE (id e perfil não mudam).
+  static Map<String, dynamic> _patch(
+    Map<String, dynamic> row,
+    List<String> cols,
+  ) => _pick(row, cols)
+    ..remove('id')
+    ..remove('perfil_id');
 
-  static List<Map<String, dynamic>> _maps(dynamic value) =>
-      (value as List).map(_map).toList();
+  static List<Map<String, dynamic>> _maps(dynamic value) => (value as List)
+      .map((e) => Map<String, dynamic>.from(e as Map))
+      .toList();
 
-  static Map<String, dynamic> _boardFromApi(Map<String, dynamic> row) => {
-    'id': row['id'],
-    'perfil_id': row['perfilId'],
-    'chave': row['chave'],
-    'nome': row['nome'],
-    'icone': row['icone'],
-    'imagem_url': row['imagemUrl'],
-    'imagem_storage_path': row['imagemStoragePath'],
-    'caminho_audio': row['caminhoAudio'],
-    'ordem': row['ordem'] ?? 0,
+  static Map<String, dynamic> _board(Map<String, dynamic> r) => {
+    ...r,
+    'ordem': r['ordem'] ?? 0,
     'catalogo_arasaac': false,
   };
 
-  static Map<String, dynamic> _cardFromApi(Map<String, dynamic> row) => {
-    'id': row['id'],
-    'perfil_id': row['perfilId'],
-    'texto': row['texto'],
-    'caminho_imagem': row['caminhoImagem'],
-    'imagem_storage_path': row['imagemStoragePath'],
-    'caminho_audio': row['caminhoAudio'],
-    'icone': row['icone'],
-    'cor_hex': row['corHex'],
-    'arasaac_id': row['arasaacId'],
-    'is_favorito': row['favorito'] ?? false,
-    'frequencia_uso': row['frequenciaUso'] ?? 0,
+  static Map<String, dynamic> _card(Map<String, dynamic> r) => {
+    ...r,
+    'is_favorito': r['is_favorito'] ?? false,
+    'frequencia_uso': r['frequencia_uso'] ?? 0,
   };
 
-  Map<String, dynamic> _boardRequest(Map<String, dynamic> row) => {
-    if (row['id'] != null) 'id': row['id'],
-    'perfilId': row['perfil_id'],
-    'chave': row['chave'],
-    'nome': row['nome'],
-    'icone': row['icone'],
-    'imagemUrl': row['imagem_url'],
-    'imagemStoragePath': row['imagem_storage_path'],
-    'caminhoAudio': row['caminho_audio'],
-    'ordem': row['ordem'] ?? 0,
-  };
+  static List<List<T>> _chunks<T>(List<T> list) => [
+    for (var i = 0; i < list.length; i += _chunkSize)
+      list.sublist(
+        i,
+        i + _chunkSize > list.length ? list.length : i + _chunkSize,
+      ),
+  ];
 
-  Map<String, dynamic> _cardRequest(Map<String, dynamic> row) => {
-    if (row['id'] != null) 'id': row['id'],
-    'perfilId': row['perfil_id'],
-    'texto': row['texto'],
-    'caminhoImagem': row['caminho_imagem'],
-    'imagemStoragePath': row['imagem_storage_path'],
-    'caminhoAudio': row['caminho_audio'],
-    'icone': row['icone'],
-    'corHex': row['cor_hex'],
-    'arasaacId': row['arasaac_id'],
-    'favorito': row['is_favorito'] ?? false,
-  };
+  /// O PostgREST devolve no máximo 1000 linhas por requisição.
+  Future<List<Map<String, dynamic>>> _paged(
+    PostgrestTransformBuilder<PostgrestList> Function() build,
+  ) async {
+    final out = <Map<String, dynamic>>[];
+    for (var from = 0;; from += _pageSize) {
+      final rows = _maps(await build().range(from, from + _pageSize - 1));
+      out.addAll(rows);
+      if (rows.length < _pageSize) return out;
+    }
+  }
 
-  Future<List<Map<String, dynamic>>> fetchUserBoards(String perfilId) async =>
-      _maps(await _request('GET', 'pranchas', query: {'perfilId': perfilId}))
-          .map(_boardFromApi)
-          .toList();
+  // ---------------------------------------------------------------- leitura
+
+  Future<List<Map<String, dynamic>>> fetchUserBoards(String perfilId) async {
+    final rows = await _paged(
+      () => _client
+          .from('prancha')
+          .select()
+          .eq('perfil_id', perfilId)
+          .order('ordem')
+          .order('id'),
+    );
+    return rows.where((r) => r['catalogo_arasaac'] != true).map(_board).toList();
+  }
 
   Future<List<Map<String, dynamic>>> fetchAssociations(
     List<String> boardIds,
   ) async {
-    final rows = <Map<String, dynamic>>[];
-    for (final boardId in boardIds) {
-      final items = _maps(await _request('GET', 'pranchas/$boardId/cartoes'));
-      rows.addAll(
-        items.map(
-          (item) => {
-            'prancha_id': boardId,
-            'cartao_id': item['cartaoId'],
-            'ordem': item['ordem'] ?? 0,
-          },
+    final out = <Map<String, dynamic>>[];
+    for (final ids in _chunks(boardIds)) {
+      out.addAll(
+        await _paged(
+          () => _client
+              .from('prancha_cartao')
+              .select()
+              .inFilter('prancha_id', ids)
+              .order('prancha_id')
+              .order('cartao_id'),
         ),
       );
     }
-    return rows;
+    return out
+        .map((r) => {
+              'prancha_id': r['prancha_id'],
+              'cartao_id': r['cartao_id'],
+              'ordem': r['ordem'] ?? 0,
+            })
+        .toList();
   }
 
   Future<List<Map<String, dynamic>>> fetchCards(
     String perfilId,
     List<String> cardIds,
   ) async {
-    if (cardIds.isEmpty) return [];
-    final rows = _maps(
-      await _request('GET', 'cartoes', query: {'perfilId': perfilId}),
-    ).map(_cardFromApi).toList();
-    final ids = cardIds.toSet();
-    return rows.where((row) => ids.contains(row['id'])).toList();
+    final out = <Map<String, dynamic>>[];
+    for (final ids in _chunks(cardIds)) {
+      out.addAll(
+        await _paged(
+          () => _client
+              .from('cartao')
+              .select()
+              .eq('perfil_id', perfilId)
+              .inFilter('id', ids)
+              .order('id'),
+        ),
+      );
+    }
+    return out.map(_card).toList();
   }
 
-  Future<
-    ({
-      List<Map<String, dynamic>> boards,
-      List<Map<String, dynamic>> cards,
-      List<Map<String, dynamic>> links,
-    })
-  >
-  fetchProfileContent(String perfilId) async {
+  Future<ProfileContent> fetchProfileContent(String perfilId) async {
     final boards = await fetchUserBoards(perfilId);
     final links = await fetchAssociations(
-      boards.map((board) => board['id'] as String).toList(),
+      boards.map((b) => b['id'] as String).toList(),
     );
-    final cardIds = links
-        .map((link) => link['cartao_id'] as String)
-        .toSet()
-        .toList();
+    final cardIds = links.map((l) => l['cartao_id'] as String).toSet().toList();
     final cards = await fetchCards(perfilId, cardIds);
-    return (boards: boards, cards: cards, links: links);
+    return ProfileContent(boards: boards, cards: cards, links: links);
   }
 
   Future<List<String>> fetchLinkedCardIds(String pranchaId) async {
-    final rows = _maps(await _request('GET', 'pranchas/$pranchaId/cartoes'));
-    return rows.map((row) => row['cartaoId'] as String).toSet().toList();
+    final rows = await _paged(
+      () => _client
+          .from('prancha_cartao')
+          .select('cartao_id')
+          .eq('prancha_id', pranchaId)
+          .order('cartao_id'),
+    );
+    return rows.map((r) => r['cartao_id'] as String).toSet().toList();
   }
 
   Future<Set<String>> fetchCardIdsStillLinked(List<String> cardIds) async {
     final result = <String>{};
-    for (final cardId in cardIds) {
-      final boardIds =
-          await _request('GET', 'cartoes/$cardId/pranchas') as List;
-      if (boardIds.isNotEmpty) result.add(cardId);
+    for (final ids in _chunks(cardIds)) {
+      final rows = await _paged(
+        () => _client
+            .from('prancha_cartao')
+            .select('cartao_id')
+            .inFilter('cartao_id', ids)
+            .order('cartao_id')
+            .order('prancha_id'),
+      );
+      result.addAll(rows.map((r) => r['cartao_id'] as String));
     }
     return result;
   }
 
-  Future<bool> linkExists(String pranchaId, String cartaoId) async =>
-      (await fetchLinkedCardIds(pranchaId)).contains(cartaoId);
+  Future<bool> linkExists(String pranchaId, String cartaoId) async {
+    final rows = await _client
+        .from('prancha_cartao')
+        .select('cartao_id')
+        .eq('prancha_id', pranchaId)
+        .eq('cartao_id', cartaoId)
+        .limit(1);
+    return (rows as List).isNotEmpty;
+  }
 
   Future<List<Map<String, dynamic>>> fetchCardImagePaths(
     String perfilId,
     List<String> cardIds,
   ) async {
-    final results = <Map<String, dynamic>>[];
-    for (final id in cardIds) {
-      final row = _cardFromApi(_map(await _request('GET', 'cartoes/$id')));
-      if (row['perfil_id'] == perfilId) {
-        results.add({
-          'id': row['id'],
-          'imagem_storage_path': row['imagem_storage_path'],
-        });
-      }
+    final out = <Map<String, dynamic>>[];
+    for (final ids in _chunks(cardIds)) {
+      out.addAll(
+        await _paged(
+          () => _client
+              .from('cartao')
+              .select('id, imagem_storage_path')
+              .eq('perfil_id', perfilId)
+              .inFilter('id', ids)
+              .order('id'),
+        ),
+      );
     }
-    return results;
+    return out;
   }
 
+  // ----------------------------------------------------------------- pranchas
+
   Future<Map<String, dynamic>> insertBoard(Map<String, dynamic> data) async =>
-      _boardFromApi(
-        _map(await _request('POST', 'pranchas', body: _boardRequest(data))),
+      _board(
+        Map<String, dynamic>.from(
+          await _client
+              .from('prancha')
+              .insert(_pick(data, _boardCols))
+              .select()
+              .single(),
+        ),
       );
 
   Future<Map<String, dynamic>> updateBoard(
     String id,
     String perfilId,
     Map<String, dynamic> data,
-  ) async {
-    final current = _boardFromApi(_map(await _request('GET', 'pranchas/$id')));
-    final updated = {...current, ...data, 'id': id, 'perfil_id': perfilId};
-    return _boardFromApi(
-      _map(await _request('PUT', 'pranchas/$id', body: _boardRequest(updated))),
-    );
-  }
+  ) async => _board(
+    Map<String, dynamic>.from(
+      await _client
+          .from('prancha')
+          .update(_patch(data, _boardCols))
+          .eq('id', id)
+          .eq('perfil_id', perfilId)
+          .select()
+          .single(),
+    ),
+  );
 
   Future<void> deleteBoard(String id, String perfilId) async {
-    await _request('DELETE', 'pranchas/$id');
+    await _client
+        .from('prancha')
+        .delete()
+        .eq('id', id)
+        .eq('perfil_id', perfilId);
   }
 
+  Future<void> upsertBoard(Map<String, dynamic> row) async {
+    await _client.from('prancha').upsert(_pick(row, _boardCols));
+  }
+
+  // ----------------------------------------------------------------- cartões
+
   Future<Map<String, dynamic>> insertCard(Map<String, dynamic> data) async =>
-      _cardFromApi(
-        _map(await _request('POST', 'cartoes', body: _cardRequest(data))),
+      _card(
+        Map<String, dynamic>.from(
+          await _client
+              .from('cartao')
+              .insert(_pick(data, _cardCols))
+              .select()
+              .single(),
+        ),
       );
 
   Future<Map<String, dynamic>> updateCard(
     String id,
     String perfilId,
     Map<String, dynamic> data,
-  ) async {
-    final current = _cardFromApi(_map(await _request('GET', 'cartoes/$id')));
-    final request = {...current, ...data, 'id': id, 'perfil_id': perfilId};
-    return _cardFromApi(
-      _map(await _request('PUT', 'cartoes/$id', body: _cardRequest(request))),
-    );
-  }
+  ) async => _card(
+    Map<String, dynamic>.from(
+      await _client
+          .from('cartao')
+          .update(_patch(data, _cardCols))
+          .eq('id', id)
+          .eq('perfil_id', perfilId)
+          .select()
+          .single(),
+    ),
+  );
 
   Future<void> deleteCard(String id, String perfilId) async {
-    await _request('DELETE', 'cartoes/$id');
+    await _client
+        .from('cartao')
+        .delete()
+        .eq('id', id)
+        .eq('perfil_id', perfilId);
   }
 
   Future<void> deleteCards(List<String> ids, String perfilId) async {
-    for (final id in ids) {
-      await deleteCard(id, perfilId);
+    for (final chunk in _chunks(ids)) {
+      await _client
+          .from('cartao')
+          .delete()
+          .eq('perfil_id', perfilId)
+          .inFilter('id', chunk);
     }
-  }
-
-  Future<void> insertLink(Map<String, dynamic> data) => _link(
-    data['prancha_id'] as String,
-    data['cartao_id'] as String,
-    data['ordem'] as int,
-  );
-
-  Future<void> updateLinkOrder(String pranchaId, String cartaoId, int ordem) =>
-      _link(pranchaId, cartaoId, ordem);
-
-  Future<void> _link(String pranchaId, String cartaoId, int ordem) async {
-    await _request(
-      'PUT',
-      'pranchas/$pranchaId/cartoes/$cartaoId',
-      body: {'ordem': ordem},
-    );
-  }
-
-  Future<void> deleteLink(String pranchaId, String cartaoId) async {
-    await _request('DELETE', 'pranchas/$pranchaId/cartoes/$cartaoId');
-  }
-
-  Future<void> deleteLinksOfBoard(String pranchaId) async {
-    final cardIds = await fetchLinkedCardIds(pranchaId);
-    for (final cardId in cardIds) {
-      await deleteLink(pranchaId, cardId);
-    }
-  }
-
-  Future<void> deleteLinksOfCard(String cartaoId) async {
-    final boardIds =
-        await _request('GET', 'cartoes/$cartaoId/pranchas') as List;
-    for (final boardId in boardIds.cast<String>()) {
-      await deleteLink(boardId, cartaoId);
-    }
-  }
-
-  Future<void> upsertBoard(Map<String, dynamic> row) async {
-    final id = row['id'] as String;
-    await _request('PUT', 'pranchas/$id', body: _boardRequest(row));
   }
 
   Future<void> upsertCard(Map<String, dynamic> row) async {
-    final id = row['id'] as String;
-    await _request('PUT', 'cartoes/$id', body: _cardRequest(row));
+    await _client.from('cartao').upsert(_pick(row, _cardCols));
   }
 
-  Future<void> upsertLink(Map<String, dynamic> row) => _link(
-    row['prancha_id'] as String,
-    row['cartao_id'] as String,
-    row['ordem'] as int? ?? 0,
-  );
+  // ------------------------------------------------------------------- links
+
+  Future<void> insertLink(Map<String, dynamic> data) => upsertLink(data);
+
+  Future<void> upsertLink(Map<String, dynamic> row) async {
+    await _client.from('prancha_cartao').upsert({
+      'prancha_id': row['prancha_id'],
+      'cartao_id': row['cartao_id'],
+      'ordem': row['ordem'] ?? 0,
+    }, onConflict: 'prancha_id,cartao_id');
+  }
+
+  Future<void> updateLinkOrder(
+    String pranchaId,
+    String cartaoId,
+    int ordem,
+  ) async {
+    await _client
+        .from('prancha_cartao')
+        .update({'ordem': ordem})
+        .eq('prancha_id', pranchaId)
+        .eq('cartao_id', cartaoId);
+  }
+
+  Future<void> deleteLink(String pranchaId, String cartaoId) async {
+    await _client
+        .from('prancha_cartao')
+        .delete()
+        .eq('prancha_id', pranchaId)
+        .eq('cartao_id', cartaoId);
+  }
+
+  Future<void> deleteLinksOfBoard(String pranchaId) async {
+    await _client.from('prancha_cartao').delete().eq('prancha_id', pranchaId);
+  }
+
+  Future<void> deleteLinksOfCard(String cartaoId) async {
+    await _client.from('prancha_cartao').delete().eq('cartao_id', cartaoId);
+  }
 
   /// Mantida no Supabase porque esta rotina é uma RPC já existente no banco.
   Future<void> migrateLegacyContent(
     String perfilId,
     Map<String, dynamic> data,
-  ) => _client.rpc(
-    'inicializar_conteudo_padrao',
-    params: {'novo_perfil_id': perfilId, 'dados': data},
-  );
+  ) async {
+    await _client.rpc(
+      'inicializar_conteudo_padrao',
+      params: {'novo_perfil_id': perfilId, 'dados': data},
+    );
+  }
 
-  Future<void> uploadImage(String path, List<int> bytes, String contentType) =>
-      _client.storage
-          .from(imageBucket)
-          .uploadBinary(
-            path,
-            Uint8List.fromList(bytes),
-            fileOptions: FileOptions(contentType: contentType, upsert: false),
-          );
+  // ----------------------------------------------------------------- storage
+
+  Future<void> uploadImage(
+    String path,
+    List<int> bytes,
+    String contentType,
+  ) async {
+    await _client.storage
+        .from(imageBucket)
+        .uploadBinary(
+          path,
+          Uint8List.fromList(bytes),
+          fileOptions: FileOptions(contentType: contentType, upsert: false),
+        );
+  }
 
   Future<String> signedImageUrl(String storagePath) => _client.storage
       .from(imageBucket)
@@ -370,6 +422,7 @@ class ContentApi {
       _client.storage.from(catalogBucket).getPublicUrl('$arasaacId.png');
 }
 
+/// Mantida para compatibilidade com código que ainda captura esta exceção.
 class ContentApiException implements Exception {
   const ContentApiException(this.statusCode, this.message);
 
