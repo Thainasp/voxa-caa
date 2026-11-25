@@ -8,6 +8,21 @@ Aplicação mobile interativa e acessível desenvolvida para Comunicação Aumen
 
 Este projeto está sendo desenvolvido em âmbito acadêmico com foco em **acessibilidade digital**, **arquitetura de informação inclusiva** e **usabilidade**. A aplicação irá organizar o vocabulário através do **Sistema Fitzgerald Modificado**, equilibrando termos essenciais de alta frequência na tela principal e categorias temáticas organizadas em pastas e subpastas de fácil navegação.
 
+> **Projeto Multidisciplinar — 5º Período (2026)**
+>
+> **Instituição:** Instituto Federal de São Paulo (IFSP) — Câmpus Bragança Paulista
+>
+> **Curso:** Tecnologia em Análise e Desenvolvimento de Sistemas (ADS)
+>
+> **Disciplinas integradas:** Projeto de Tecnologia da Informação e Comunicação (`BRAOTI1`), Desenvolvimento para Dispositivos Móveis (`BRADEMO`), Desenvolvimento Web Back-end (`BRADWBK`) e Desenvolvimento de Componentes (`BRADEPO`).
+
+## Integrantes
+
+| Nome | Prontuário |
+| :--- | :--- |
+| Mariane Fátima Silva | `BP3053474` |
+| Thaina de Souza Pereira | `BP3053423` |
+
 ### ✨ Principais Funcionalidades
 
 * **Arquitetura Multinível:** Tela inicial com vocabulário essencial (*Core Vocabulary*) e navegação intuitiva para categorias periféricas (Alimentação, Sentimentos, Rotinas, Lugares, etc.).
@@ -35,6 +50,11 @@ Este projeto está sendo desenvolvido em âmbito acadêmico com foco em **acessi
 
 ## ▶️ Como executar
 
+### Pré-requisitos
+* **Java 17+** e **Maven 3.9+**
+* **Flutter SDK 3.x+** e **Android Studio / SDK Android** (para compilar o app mobile)
+
+
 1. **Supabase:** rode no SQL Editor `BACKEND/database/supabase_content.sql`, depois
    `BACKEND/database/voxa_migracao_v2.sql` e
    `BACKEND/database/fix_auth_user_trigger.sql`. Em Authentication > URL Configuration >
@@ -50,6 +70,24 @@ Este projeto está sendo desenvolvido em âmbito acadêmico com foco em **acessi
    perfil `supabase` (veja `BACKEND/api/README.md`). Painel do cuidador em
    http://localhost:8080/ e Swagger em http://localhost:8080/swagger-ui.html.
 
+> **Nota para Avaliação Rápida:** Os testes automatizados (`flutter test`) rodam localmente sem necessidade de conexão com o Supabase, e a versão compilada (`flutter build apk --release`) pode ser instalada diretamente em dispositivos Android para testes funcionais sem configuração de ambiente de desenvolvimento.
+
+## Testes e Qualidade
+
+* **Testes Unitários e de Widget (Flutter):**
+  ```bash
+  cd FRONTEND/voxa
+  flutter analyze
+  flutter test
+  ```
+  Cobre navegação, regras de termos e perfil ativo, deep link, CRUD offline com relação `N:N`, código de cores Fitzgerald e sincronização em Wi-Fi (`widget_test.dart`, `home_content_controller_test.dart` e `offline_sync_test.dart`).
+
+* **Testes de Integração da API (Spring Boot / MockMvc):**
+  ```bash
+  cd BACKEND/api
+  mvn test
+  ```
+
 O catálogo ARASAAC fica no SQLite do aparelho (não é mais copiado para cada
 perfil no Supabase). As linhas abaixo descrevem o conteúdo criado pelo usuário.
 
@@ -64,13 +102,18 @@ ARASAAC vem de `BACKEND/arasaac_dataset/catalogo.json` (convertido em
 classifica cada pictograma na chave de cores Fitzgerald). Imagens do dispositivo são enviadas ao bucket privado
 `content-images`; imagens da internet podem ser informadas por URL.
 
-Os pictogramas utilizados foram criados por Sergio Palao para ARASAAC
-(https://arasaac.org), são propriedade do Governo de Aragão e estão sob licença
-Creative Commons BY-NC-SA. O app apresenta essa atribuição na tela inicial e
-inclui a licença fornecida com o conjunto em
-`FRONTEND/voxa/assets/arasaac/LICENCA.txt`.
-Essa licença exige atribuição, uso não comercial e compartilhamento de obras
-derivadas sob a mesma licença.
+
+## Catálogo ARASAAC e Licença de Uso
+
+O vocabulário visual padrão do **Voxa** integra o catálogo de pictogramas **ARASAAC** é propriedade do Governo de Aragão, criado por Serigio Palao e contém **610 categorias** e **13.767 pictogramas** organizados localmente no banco SQLite e na pasta `BACKEND/arasaac_dataset/`, com mapeamento automático para o **Sistema de Cores de Fitzgerald**.
+
+### Atribuição Obrigatória
+* **Autor dos pictogramas:** Sergio Palao
+* **Origem / Propriedade:** ARASAAC ([http://www.arasaac.org](http://www.arasaac.org)) — Governo de Aragão (Espanha)
+* **Licença:** **Creative Commons Attribution-NonCommercial-ShareAlike (CC BY-NC-SA)**
+  * **Atribuição (BY):** É obrigatório dar o devido crédito ao autor (Sergio Palao) e ao portal ARASAAC.
+  * **Uso Não Comercial (NC):** Os pictogramas e este projeto não podem ser utilizados para fins comerciais.
+  * **Compartilha Igual (SA):** Obras derivadas devem ser distribuídas sob a mesma licença Creative Commons.
 
 ---
 
@@ -84,5 +127,10 @@ derivadas sob a mesma licença.
 | **Rosa/Roxo** | Social e Cortesia | Ex. Sim, Não, Oi, Por Favor, Obrigado |
 | **Laranja** | Pastas Temáticas / Substantivos | Ex. Comidas, Lugares, Vestuário, Brinquedos |
 | **Cinza/Branco**| Controle e Estruturais | Ex. Apagar, Falar Tudo, Em, Para, O que |
+
+
+## Privacidade e Conformidade (LGPD)
+
+* **Proteção de Dados Sensíveis:** Por atender menores e pessoas vulneráveis, o sistema aplica coleta mínima de dados pessoais, controle parental autenticado para ações administrativas, armazenamento de imagens em buckets privados com URLs assinadas e mascaramento automático do telefone do responsável (`telefoneMascarado`) nos eventos transmitidos via WebSocket (`RN-04`).
 
 ---
