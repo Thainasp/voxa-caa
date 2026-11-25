@@ -105,7 +105,7 @@ classifica cada pictograma na chave de cores Fitzgerald). Imagens do dispositivo
 
 ## Catálogo ARASAAC e Licença de Uso
 
-O vocabulário visual padrão do **Voxa** integra o catálogo de pictogramas **ARASAAC** é propriedade do Governo de Aragão, criado por Serigio Palao e contém **610 categorias** e **13.767 pictogramas** organizados localmente no banco SQLite e na pasta `BACKEND/arasaac_dataset/`, com mapeamento automático para o **Sistema de Cores de Fitzgerald**.
+O vocabulário visual padrão do **Voxa** integra o catálogo de pictogramas **ARASAAC** e é propriedade do Governo de Aragão, criado por Serigio Palao. Contém **610 categorias** e **13.767 pictogramas** organizados localmente no banco SQLite e na pasta `BACKEND/arasaac_dataset/`, com mapeamento automático para o **Sistema de Cores de Fitzgerald**.
 
 ### Atribuição Obrigatória
 * **Autor dos pictogramas:** Sergio Palao
